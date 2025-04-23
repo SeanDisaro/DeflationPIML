@@ -15,8 +15,11 @@ to do some basic set up.
 ## Cite the paper
 
 ## Team
-Name        | Email
-Sean Disarò | seandisaro@gmail.com 
-...         | ...
+
+| Name        | Email                |
+|-------------|----------------------|
+| Sean Disarò | seandisaro@gmail.com |
+| ...         | ...                  |
+
 ## License
 This project is licensed under the GNU license. You may use it however you want!
