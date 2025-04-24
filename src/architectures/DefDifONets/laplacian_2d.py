@@ -144,12 +144,12 @@ class laplacian_2D_DefDifONet(nn.Module):
             out2_dxx.   append( (torch.sum(totalOutAux[:, 5*self.numBranchFeatures:                         ], dim = 1) + self.deepONet_biases[5]).view(-1,1) )
 
         if self.DirichletHardConstraint:
-            out1 = out1 * self.geom.boundary_constraint_factor(out1, smoothness="C0+")
-            out2 = out2 * self.geom.boundary_constraint_factor(out2, smoothness="C0+")
+            out1 = out1 * self.geom.boundary_constraint_factor(x, smoothness="C0+")
+            out2 = out2 * self.geom.boundary_constraint_factor(x, smoothness="C0+")
             if self.DirichletConditionFunc1 != None:
-                out1 = out1 + self.DirichletConditionFunc1
+                out1 = out1 + self.DirichletConditionFunc1(x)
             if self.DirichletConditionFunc2 != None:
-                out2 = out2 + self.DirichletConditionFunc2
+                out2 = out2 + self.DirichletConditionFunc2(x)
 
         return out1, out2, out1_dx, out2_dx, out1_dxx, out2_dxx, branchOut
 
