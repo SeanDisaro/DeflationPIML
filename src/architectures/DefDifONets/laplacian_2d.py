@@ -18,10 +18,10 @@ class laplacian_2D_DefDifONet(nn.Module):
                     trunk_width: int,
                     activationFunction: Callable[[torch.Tensor], torch.Tensor],
                     geom: dde.geometry.geometry.Geometry,
-                    skipConnection: bool,
                     DirichletHardConstraint: bool,
-                    sensorPoints: torch.Tensor,
-                    DirichletConditionFunc: Callable[[torch.Tensor], torch.Tensor] = None
+                    skipConnection: bool = False,
+                    DirichletConditionFunc1: Callable[[torch.Tensor], torch.Tensor] = None,
+                    DirichletConditionFunc2: Callable[[torch.Tensor], torch.Tensor] = None
                     ):
         super().__init__()
         self.activationFunction = activationFunction
@@ -29,33 +29,37 @@ class laplacian_2D_DefDifONet(nn.Module):
         self.geom = geom
         self.DirichletHardConstraint = DirichletHardConstraint
         self.skipConnection = skipConnection
-        self.sensorPoints = sensorPoints
         self.branch_layer = branch_layer
-        self.DirichletConditionFunc = DirichletConditionFunc
+        self.DirichletConditionFunc1 = DirichletConditionFunc1
+        self.DirichletConditionFunc2 = DirichletConditionFunc2
+        self.trunk_layer = trunk_layer
 
-        self.trunkNet = nn.Sequential(*
-            (
-                [nn.Linear(2,trunk_width), self.activationFunction] # input layer
-                +
-                [nn.Sequential(*[nn.Linear(trunk_width, trunk_width), self.activationFunction]) for i in range(max(trunk_layer-1,0))] # hidden layers
-                +
-                [nn.Linear(trunk_width, numBranchFeatures*6)] # output layers
-            )
-        )
+
+
+        self.trunkNet_Lin        =  (     
+                                      [nn.Linear(2,trunk_width)]
+                                    + [nn.Linear(trunk_width, trunk_width) for i in range(max(trunk_layer-1,0))]
+                                    + [nn.Linear(trunk_width, numBranchFeatures*6)]
+                                    )
+        
+        self.trunkNet_biases     =  (
+                                      [nn.Parameter(torch.randn(trunk_width))  for i in range( trunk_layer )]
+                                    + [nn.Parameter(torch.randn(numBranchFeatures*6))]
+                                    )
 
         self.branch_Lin_OtherSol =  (     
-                                      [nn.Linear(2, branch_width)]
+                                      [nn.Linear(numBranchFeatures, branch_width)]
                                     + [nn.Linear(branch_width, branch_width) for i in range( max(branch_layer-1,0) )]
                                     + [nn.Linear(branch_width, numBranchFeatures*6)]
                                     )
 
         self.branch_Lin          =  (     
-                                      [nn.Linear(2, branch_width)]
+                                      [nn.Linear(numBranchFeatures, branch_width)]
                                     + [nn.Linear(branch_width, branch_width) for i in range( max(branch_layer-1,0) )]
                                     + [nn.Linear(branch_width, numBranchFeatures*6)]
                                     )
 
-        self.branch_biases       =  (
+        self.branch_biases      =   (
                                       [nn.Parameter(torch.randn(branch_width))  for i in range( branch_layer )]
                                     + [nn.Parameter(torch.randn(numBranchFeatures*6))]
                                     )
@@ -75,10 +79,13 @@ class laplacian_2D_DefDifONet(nn.Module):
                 sumOthersol = sumOthersol + self.branch_Lin_OtherSol[i](outList[j])
 
             for j in range(n):
+                skipConn = outList[j].copy()
                 outList[j] = sumOthersol - self.branch_Lin_OtherSol[i](outList[j])
                 outList[j] = outList[j] + self.branch_Lin[i](outList[j])
                 outList[j] = outList[j] + self.branch_biases[i]
                 outList[j] = self.activationFunction( outList[j] )
+                if self.skipConnection and i != 0:
+                    outList[j] = skipConn + outList[j]
         sumOthersol = torch.zeros_like(outList[0])
         for j in range(n):
             sumOthersol = sumOthersol + self.branch_Lin_OtherSol[-1](outList[j])
@@ -87,14 +94,22 @@ class laplacian_2D_DefDifONet(nn.Module):
             outList[j] = sumOthersol - self.branch_Lin_OtherSol[-1](outList[j])
             outList[j] = outList[j] + self.branch_Lin[-1](outList[j])
             outList[j] = outList[j] + self.branch_biases[-1]
-
         return outList
 
-    #def trunk(self, x: torch.Tensor)->torch.Tensor:
-    #    return self.trunkNet(x)
+    def trunk(self, x: torch.Tensor)->torch.Tensor:
+        out = torch.zeros_like(x) + x
+        for i in range(self.trunk_layer):
+            skipConn = out.copy()
+            out = self.activationFunction(self.trunkNet_Lin[i](out) + self.trunkNet_biases[i])
+            if self.skipConnection and i != 0:
+                out = out + skipConn
+        
+        out = self.trunkNet_Lin[-1](out) + self.trunkNet_biases[-1]
+
+        return out
 
     def evaluateFunc(self, branchFeatures: torch.Tensor ,x: torch.Tensor)->Tuple[torch.Tensor, torch.Tensor]:
-        trunkOut = self.trunkNet(x)
+        trunkOut = self.trunk(x)
         batchSize = trunkOut.shape[0]
         tiledBranchAux = torch.tile(branchFeatures, (batchSize,1))
         totalOutProd = trunkOut[:,:2*self.numBranchFeatures]*tiledBranchAux[:,:2*self.numBranchFeatures]
@@ -107,7 +122,7 @@ class laplacian_2D_DefDifONet(nn.Module):
                                                                          list[torch.Tensor],list[torch.Tensor],
                                                                          list[torch.Tensor],list[torch.Tensor],list[torch.Tensor]]:
         #output TrunkNet
-        trunkOut = self.trunkNet(x)
+        trunkOut = self.trunk(x)
 
         #output BranchNet
         n = len(listU)
@@ -128,7 +143,13 @@ class laplacian_2D_DefDifONet(nn.Module):
             out1_dxx.   append( (torch.sum(totalOutAux[:, 4*self.numBranchFeatures: 5*self.numBranchFeatures], dim = 1) + self.deepONet_biases[4]).view(-1,1) )
             out2_dxx.   append( (torch.sum(totalOutAux[:, 5*self.numBranchFeatures:                         ], dim = 1) + self.deepONet_biases[5]).view(-1,1) )
 
-
+        if self.DirichletHardConstraint:
+            out1 = out1 * self.geom.boundary_constraint_factor(out1, smoothness="C0+")
+            out2 = out2 * self.geom.boundary_constraint_factor(out2, smoothness="C0+")
+            if self.DirichletConditionFunc1 != None:
+                out1 = out1 + self.DirichletConditionFunc1
+            if self.DirichletConditionFunc2 != None:
+                out2 = out2 + self.DirichletConditionFunc2
 
         return out1, out2, out1_dx, out2_dx, out1_dxx, out2_dxx, branchOut
 
