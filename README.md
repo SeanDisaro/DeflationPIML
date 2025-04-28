@@ -9,7 +9,7 @@ Now make sure, that you are in the directory of this repository with your consol
 
 to install the necessary packages. Afterwards run
 
-    python config.py
+    pip install -e .
 
 to do some basic set up.
 ## Cite the paper
