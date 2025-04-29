@@ -48,13 +48,13 @@ class laplacian_2D_DefDifONet(nn.Module):
                                     )
 
         self.branch_Lin_OtherSol =  (     
-                                      [nn.Linear(numBranchFeatures, branch_width)]
+                                      [nn.Linear(numBranchFeatures*10, branch_width)]
                                     + [nn.Linear(branch_width, branch_width) for i in range( max(branch_layer-1,0) )]
                                     + [nn.Linear(branch_width, numBranchFeatures*10)]
                                     )
 
         self.branch_Lin          =  (     
-                                      [nn.Linear(numBranchFeatures, branch_width)]
+                                      [nn.Linear(numBranchFeatures*10, branch_width)]
                                     + [nn.Linear(branch_width, branch_width) for i in range( max(branch_layer-1,0) )]
                                     + [nn.Linear(branch_width, numBranchFeatures*10)]
                                     )
@@ -71,35 +71,35 @@ class laplacian_2D_DefDifONet(nn.Module):
         n = len(listU)
 
         #initialize output
-        outList = [listU[i].copy() for i in range(n)]
+        outList = [listU[i].clone() for i in range(n)]
 
         for i in range(self.branch_layer):
-            sumOthersol = torch.zeros_like(outList[0])
+            sumOthersol = torch.zeros((self.branch_Lin_OtherSol[i].out_features), device=outList[0].device)
             for j in range(n):
                 sumOthersol = sumOthersol + self.branch_Lin_OtherSol[i](outList[j])
 
             for j in range(n):
-                skipConn = outList[j].copy()
-                outList[j] = sumOthersol - self.branch_Lin_OtherSol[i](outList[j])
-                outList[j] = outList[j] + self.branch_Lin[i](outList[j])
+                skipConn = outList[j].clone()
+                otherSolContribution = sumOthersol - self.branch_Lin_OtherSol[i](outList[j])
+                outList[j] = otherSolContribution + self.branch_Lin[i](outList[j])
                 outList[j] = outList[j] + self.branch_biases[i]
                 outList[j] = self.activationFunction( outList[j] )
                 if self.skipConnection and i != 0:
                     outList[j] = skipConn + outList[j]
-        sumOthersol = torch.zeros_like(outList[0])
+        sumOthersol = torch.zeros((self.branch_Lin_OtherSol[-1].out_features), device=outList[0].device )
         for j in range(n):
             sumOthersol = sumOthersol + self.branch_Lin_OtherSol[-1](outList[j])
 
         for j in range(n):
-            outList[j] = sumOthersol - self.branch_Lin_OtherSol[-1](outList[j])
-            outList[j] = outList[j] + self.branch_Lin[-1](outList[j])
+            otherSolContribution = sumOthersol - self.branch_Lin_OtherSol[-1](outList[j])
+            outList[j] = otherSolContribution + self.branch_Lin[-1](outList[j])
             outList[j] = outList[j] + self.branch_biases[-1]
         return outList
 
     def trunk(self, x: torch.Tensor)->torch.Tensor:
-        out = torch.zeros_like(x) + x
+        out = torch.zeros_like(x, device= x.device) + x
         for i in range(self.trunk_layer):
-            skipConn = out.copy()
+            skipConn = out.clone()
             out = self.activationFunction(self.trunkNet_Lin[i](out) + self.trunkNet_biases[i])
             if self.skipConnection and i != 0:
                 out = out + skipConn
@@ -120,6 +120,8 @@ class laplacian_2D_DefDifONet(nn.Module):
 
     def forward(self, listU: list[torch.Tensor], x: torch.Tensor)->Tuple[list[torch.Tensor],list[torch.Tensor],
                                                                          list[torch.Tensor],list[torch.Tensor],
+                                                                         list[torch.Tensor],list[torch.Tensor],
+                                                                         list[torch.Tensor],list[torch.Tensor],
                                                                          list[torch.Tensor],list[torch.Tensor],list[torch.Tensor]]:
         #output TrunkNet
         trunkOut = self.trunk(x)
@@ -135,7 +137,7 @@ class laplacian_2D_DefDifONet(nn.Module):
         for i in range(n):
             tiledBranchAux = torch.tile(branchOut[i], (batchSize,1))
             branchTiledFeatures.append(tiledBranchAux )
-            totalOutAux = trunkOut*tiledBranchAux 
+            totalOutAux = trunkOut*tiledBranchAux
 
             out1.       append( (torch.sum(totalOutAux[:,                         :   self.numBranchFeatures], dim = 1) + self.deepONet_biases[0]).view(-1,1) )
             out2.       append( (torch.sum(totalOutAux[:,   self.numBranchFeatures: 2*self.numBranchFeatures], dim = 1) + self.deepONet_biases[1]).view(-1,1) )
