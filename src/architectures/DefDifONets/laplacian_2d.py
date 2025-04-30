@@ -42,16 +42,20 @@ class laplacian_2D_DefDifONet(nn.Module):
                                     + [nn.Linear(trunk_width, numBranchFeatures*10)]
                                     )
         
-        self.trunkNet_biases     =  (
-                                      [nn.Parameter(torch.randn(trunk_width))  for i in range( trunk_layer )]
-                                    + [nn.Parameter(torch.randn(numBranchFeatures*10))]
-                                    )
+        # add the modules manually to ensure, that all parameters appear in model paramters
+        for idx,module in enumerate(self.trunkNet_Lin):
+            self.add_module(f"trunkNet_Lin_{idx}", module)
+
 
         self.branch_Lin_OtherSol =  (     
-                                      [nn.Linear(numBranchFeatures*10, branch_width)]
-                                    + [nn.Linear(branch_width, branch_width) for i in range( max(branch_layer-1,0) )]
-                                    + [nn.Linear(branch_width, numBranchFeatures*10)]
+                                      [nn.Linear(numBranchFeatures*10, branch_width, bias=False)]
+                                    + [nn.Linear(branch_width, branch_width, bias=False) for i in range( max(branch_layer-1,0) )]
+                                    + [nn.Linear(branch_width, numBranchFeatures*10, bias=False)]
                                     )
+        
+        # add the modules manually to ensure, that all parameters appear in model paramters
+        for idx,module in enumerate(self.branch_Lin_OtherSol):
+            self.add_module(f"branch_Lin_OtherSol_{idx}", module)
 
         self.branch_Lin          =  (     
                                       [nn.Linear(numBranchFeatures*10, branch_width)]
@@ -59,13 +63,14 @@ class laplacian_2D_DefDifONet(nn.Module):
                                     + [nn.Linear(branch_width, numBranchFeatures*10)]
                                     )
 
-        self.branch_biases      =   (
-                                      [nn.Parameter(torch.randn(branch_width))  for i in range( branch_layer )]
-                                    + [nn.Parameter(torch.randn(numBranchFeatures*10))]
-                                    )
+        # add the modules manually to ensure, that all parameters appear in model paramters
+        for idx,module in enumerate(self.branch_Lin):
+            self.add_module(f"branch_Lin_{idx}", module)
+
         
-        self.deepONet_biases     =    [nn.Parameter(torch.randn(1)) for i in range( 10 )]
-                                
+        self.deepONet_biases     =    nn.ParameterList([nn.Parameter(torch.randn(1)) for i in range( 10 )])
+
+
         
     def totalBranch(self, listU: list[torch.Tensor])->list[torch.Tensor]:
         n = len(listU)
@@ -82,7 +87,6 @@ class laplacian_2D_DefDifONet(nn.Module):
                 skipConn = outList[j].clone()
                 otherSolContribution = sumOthersol - self.branch_Lin_OtherSol[i](outList[j])
                 outList[j] = otherSolContribution + self.branch_Lin[i](outList[j])
-                outList[j] = outList[j] + self.branch_biases[i]
                 outList[j] = self.activationFunction( outList[j] )
                 if self.skipConnection and i != 0:
                     outList[j] = skipConn + outList[j]
@@ -93,18 +97,17 @@ class laplacian_2D_DefDifONet(nn.Module):
         for j in range(n):
             otherSolContribution = sumOthersol - self.branch_Lin_OtherSol[-1](outList[j])
             outList[j] = otherSolContribution + self.branch_Lin[-1](outList[j])
-            outList[j] = outList[j] + self.branch_biases[-1]
         return outList
 
     def trunk(self, x: torch.Tensor)->torch.Tensor:
         out = torch.zeros_like(x, device= x.device) + x
         for i in range(self.trunk_layer):
             skipConn = out.clone()
-            out = self.activationFunction(self.trunkNet_Lin[i](out) + self.trunkNet_biases[i])
+            out = self.activationFunction(self.trunkNet_Lin[i](out))
             if self.skipConnection and i != 0:
                 out = out + skipConn
         
-        out = self.trunkNet_Lin[-1](out) + self.trunkNet_biases[-1]
+        out = self.trunkNet_Lin[-1](out)
 
         return out
 

@@ -37,7 +37,28 @@ def derivativeLoss2D(x: torch.Tensor ,out1: list[torch.Tensor], out2: list[torch
                                        allow_unused=True, create_graph=True)[0]
     
 
-    return (torch.mean(torch.norm(out1_dxAD - out1_dx,dim=1)) +
-            torch.mean(torch.norm(out2_dxAD - out2_dx,dim=1)) +
-            torch.mean(torch.norm(out1_dyAD - out1_dy,dim=1)) +
-            torch.mean(torch.norm(out2_dyAD - out2_dy,dim=1)))
+    return (torch.mean(torch.norm(out1_dxAD - torch.concatenate(out1_dx),dim=1)) +
+            torch.mean(torch.norm(out2_dxAD - torch.concatenate(out2_dx),dim=1)) +
+            torch.mean(torch.norm(out1_dyAD - torch.concatenate(out1_dy),dim=1)) +
+            torch.mean(torch.norm(out2_dyAD - torch.concatenate(out2_dy),dim=1)))
+
+def derivativeLoss(x: torch.Tensor,out: list[torch.Tensor], out_dx: list[torch.Tensor],component: int = 0 ) -> torch.Tensor:
+  """The derivative loss for one component and one direction.
+
+  Args:
+      x (torch.Tensor): points with respect to which we want to take the derivative. x is of shape (batchSize, n) where n is the dimension of x.
+      out (list[torch.Tensor]): output we want to differentiate.
+      out_dx (list[torch.Tensor]): derivative approximation from the model.
+      component (int, optional): The component of x with respect to which we want to take the derivative, i.e. component is between 0 and n. Defaults to 0.
+
+  Returns:
+      torch.Tensor: loss
+  """  
+  out_Concat = torch.concatenate(out)
+  out_dx_Concat = torch.concatenate(out_dx)
+  batchSize = x.shape[0]
+  batchSizeTimesNumInputfunc = batchSize *len(out)
+  out_dxAD = torch.autograd.grad(out_Concat.view(-1,1), x[:,component].view(-1,1),
+                                     torch.ones((batchSizeTimesNumInputfunc, 1), requires_grad = True).to("cuda"),
+                                       allow_unused=True, create_graph=True)[0]
+  return torch.mean(torch.norm(out_dxAD - out_dx_Concat,dim=1))

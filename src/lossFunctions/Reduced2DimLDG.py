@@ -1,30 +1,69 @@
 import torch
+from src.lossFunctions.derivativeLoss import derivativeLoss2D, derivativeLoss
 
-def pimlLoss(x: torch.Tensor, modelOut:list[torch.Tensor], boundaryPoints:torch.Tensor = None, modelOutBoundary:list[torch.Tensor] = None , eps:float = 0.02, alpha:float = 1., beta:float = 0.1)->torch.Tensor:
+def pimlLoss(modelOut:list[list[torch.Tensor]], boundaryPoints:torch.Tensor = None, modelOutBoundary:list[list[torch.Tensor]] = None ,
+                eps:float = 0.02, alpha:float = 1., beta:float = 0.1)->torch.Tensor:
     """This is the physics informed loss function for this problem, which is created with the strong formulation of the PDE.
 
     Args:
-        x (torch.Tensor): This is the set of points in the interior of the domain.
-        modelOut (list[torch.Tensor]): This is the output of the model.
+        modelOut (list[list[torch.Tensor]]): This is the output of the model.
         boundaryPoints (boundaryPoints, optional): Set of boundary points. This is only used if boundaryLoss is set to True. Defaults to None. If this is set to None, then only the boundary loss term is omitted
-        modelOutBoundary (list[torch.Tensor], optional): Result of model on the boundary. If this is None, then the boundary loss term is omitted.
+        modelOutBoundary (list[list[torch.Tensor]], optional): Result of model on the boundary. If this is None, then the boundary loss term is omitted.
         eps (float, optional): epsilon parameter form paper. Defaults to 0.02.
         alpha (float, optional): Weight parameter loss term PDE.
         beta (float, optional):Weight parameter loss term boundary.
 
     Returns:
         torch.Tensor: loss
-    """   
-    laplace = modelOut[5] + modelOut[6]
-    Q_squaredNorm = modelOut[0]**2 + modelOut[1]**2
-    lossPDE_comp1 = 2*   (1 - Q_squaredNorm) *modelOut[0]    / (eps **2) + laplace
-    lossPDE_comp2 = 2*   (1 - Q_squaredNorm) *modelOut[1]    / (eps **2) + laplace
+    """ 
+    laplace_comp1 = torch.concatenate(modelOut[4]) + torch.concatenate(modelOut[8])
+    laplace_comp2 = torch.concatenate(modelOut[5]) + torch.concatenate(modelOut[9])
+    Q_squaredNorm = torch.concatenate(modelOut[0])**2 + torch.concatenate(modelOut[1])**2
+    lossPDE_comp1 = 2*   (1 - Q_squaredNorm) *torch.concatenate(modelOut[0])    / (eps **2) + laplace_comp1
+    lossPDE_comp2 = 2*   (1 - Q_squaredNorm) *torch.concatenate(modelOut[1])    / (eps **2) + laplace_comp2
     lossPDE = torch.mean(torch.norm(lossPDE_comp1, dim = 1)) + torch.mean(torch.norm(lossPDE_comp2, dim = 1)) 
     if boundaryPoints == None or modelOutBoundary == None:
-        boundaryLoss = torch.mean(torch.norm( modelOutBoundary[0] - trapezoidalFun(boundaryPoints, 3*eps), dim = 1)) + torch.mean(torch.norm( modelOutBoundary[1] , dim = 1))
+        boundaryLoss = (    torch.mean(torch.norm( torch.concatenate(modelOutBoundary[0]) - trapezoidalFun(boundaryPoints, 3*eps), dim = 1))
+                            +torch.mean(torch.norm( torch.concatenate(modelOutBoundary[1]) , dim = 1)))
         return alpha* lossPDE + beta  * boundaryLoss
     else:
         return lossPDE
+    
+
+
+def defDifONetLossPIML( x: torch.Tensor, modelOut:list[torch.Tensor], boundaryPoints:torch.Tensor = None,modelOutBoundary:list[torch.Tensor] = None ,
+                    eps:float = 0.02, alpha:float = 1., beta:float = 0.1, gamma:float = 1) -> torch.Tensor:
+    """This is the loss funciton you want to use for the DefDifONet. This includes losses for the reduced 2dim LDG PDE, derivative losses and a boundary loss (optional).
+    Args:
+        x (torch.Tensor): _description_
+        modelOut (list[torch.Tensor]): _description_
+        boundaryPoints (torch.Tensor, optional): _description_. Defaults to None.
+        modelOutBoundary (list[torch.Tensor], optional): _description_. Defaults to None.
+        eps (float, optional): _description_. Defaults to 0.02.
+        alpha (float, optional): _description_. Defaults to 1..
+        beta (float, optional): _description_. Defaults to 0.1.
+        gamma (float, optional): _description_. Defaults to 1.
+
+    Returns:
+        torch.Tensor: alpha*PDE_loss + beta* boundary_loss+ gamma*(1stOrderDerivatives_loss+ 2ndOrderDerivative_loss)
+    """
+    loss_PDEAndBoundary = pimlLoss(  modelOut = modelOut, boundaryPoints = boundaryPoints, modelOutBoundary = modelOutBoundary ,
+                                    eps = eps, alpha = alpha, beta = beta)
+    loss_FirstOrderDerivatives = derivativeLoss2D(x=x, out1 = modelOut[0], out2 = modelOut[1], out1_dx = modelOut[2], out2_dx = modelOut[3], out1_dy = modelOut[6], out2_dy = modelOut[7])/4
+
+    dxx_Order_Comp1 = derivativeLoss(x = x,out = modelOut[2], out_dx = modelOut[4], component = 0 )
+    dxx_Order_Comp2 = derivativeLoss(x = x,out = modelOut[3], out_dx = modelOut[5], component = 0 )
+    dyy_Order_Comp1 = derivativeLoss(x = x,out = modelOut[6], out_dx = modelOut[8], component = 1 )
+    dyy_Order_Comp2 = derivativeLoss(x = x,out = modelOut[7], out_dx = modelOut[9], component = 1 )
+
+    secondOrderLossTotal = dxx_Order_Comp1 + dxx_Order_Comp2 + dyy_Order_Comp1 + dyy_Order_Comp2
+    secondOrderLossTotal = secondOrderLossTotal/4
+
+    totalLossDerivatives = ( loss_FirstOrderDerivatives + secondOrderLossTotal )/2
+
+    totalLoss = loss_PDEAndBoundary + gamma*totalLossDerivatives
+    return totalLoss
+    
 
 def trapezoidalFun(x: torch.Tensor, d:float)->torch.Tensor:
     """This is the funciton T_d(x) from the paper.
