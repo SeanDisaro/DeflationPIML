@@ -24,28 +24,29 @@ def pimlLoss(modelOut:list[list[torch.Tensor]], boundaryPoints:torch.Tensor = No
     lossPDE = torch.mean(torch.norm(lossPDE_comp1, dim = 1)) + torch.mean(torch.norm(lossPDE_comp2, dim = 1)) 
     if boundaryPoints == None or modelOutBoundary == None:
         boundaryLoss = (    torch.mean(torch.norm( torch.concatenate(modelOutBoundary[0]) - trapezoidalFun(boundaryPoints, 3*eps), dim = 1))
-                            +torch.mean(torch.norm( torch.concatenate(modelOutBoundary[1]) , dim = 1)))
+                            + torch.mean(torch.norm( torch.concatenate(modelOutBoundary[1]) , dim = 1)))
         return alpha* lossPDE + beta  * boundaryLoss
     else:
         return lossPDE
     
 
 
-def defDifONetLossPIML( x: torch.Tensor, modelOut:list[torch.Tensor], boundaryPoints:torch.Tensor = None,modelOutBoundary:list[torch.Tensor] = None ,
-                    eps:float = 0.02, alpha:float = 1., beta:float = 0.1, gamma:float = 1) -> torch.Tensor:
-    """This is the loss funciton you want to use for the DefDifONet. This includes losses for the reduced 2dim LDG PDE, derivative losses and a boundary loss (optional).
+def defDifONetLossPIML( x: torch.Tensor, modelOut:list[list[torch.Tensor]], boundaryPoints:torch.Tensor = None,modelOutBoundary:list[list[torch.Tensor]] = None ,
+                    eps:float = 0.02, deflationLossCoeff:float = 1., alpha:float = 1., beta:float = 0.1, gamma:float = 1., delta: float = 1.) -> torch.Tensor:
+    """This is the loss funciton you want to use for the DefDifONet. This includes losses for the reduced 2dim LDG PDE, derivative losses and a boundary loss (optional). Derivative loss is computed via auto differentiation.
     Args:
-        x (torch.Tensor): _description_
-        modelOut (list[torch.Tensor]): _description_
-        boundaryPoints (torch.Tensor, optional): _description_. Defaults to None.
-        modelOutBoundary (list[torch.Tensor], optional): _description_. Defaults to None.
-        eps (float, optional): _description_. Defaults to 0.02.
-        alpha (float, optional): _description_. Defaults to 1..
-        beta (float, optional): _description_. Defaults to 0.1.
-        gamma (float, optional): _description_. Defaults to 1.
-
+        x (torch.Tensor): points which were put into modelOut. Note that requires_grad needs to be set to true.
+        modelOut (list[list[torch.Tensor]]): Output of the model.
+        boundaryPoints (torch.Tensor, optional): Boundary Points that were put into the model for computing output of model on the boundary. If this is set to None, then no boundary loss is computed. Defaults to None.
+        modelOutBoundary (list[torch.Tensor], optional): Output of model on the boundary. If this is set to None, then no boundary loss is computed. Defaults to None.
+        eps (float, optional): epsilon from LDG model, as in paper. Defaults to 0.02.
+        eps (float, optional): Deflation loss coefficient, see deflation loss. Defaults to 1.
+        alpha (float, optional): Weigth of PDE loss in total loss funciton. Defaults to 1..
+        beta (float, optional): Weight of boundary loss in total loss function. Defaults to 0.1.
+        gamma (float, optional): Weight of derivative loss in total loss funciton. Defaults to 1.
+        delta (float, optional): Weight of deflation loss in total loss funciton. Defaults to 1.
     Returns:
-        torch.Tensor: alpha*PDE_loss + beta* boundary_loss+ gamma*(1stOrderDerivatives_loss+ 2ndOrderDerivative_loss)
+        torch.Tensor: alpha*PDE_loss + beta* boundary_loss+ gamma*(1stOrderDerivatives_loss+ 2ndOrderDerivative_loss) + delta* deflationLoss
     """
     loss_PDEAndBoundary = pimlLoss(  modelOut = modelOut, boundaryPoints = boundaryPoints, modelOutBoundary = modelOutBoundary ,
                                     eps = eps, alpha = alpha, beta = beta)
@@ -61,7 +62,7 @@ def defDifONetLossPIML( x: torch.Tensor, modelOut:list[torch.Tensor], boundaryPo
 
     totalLossDerivatives = ( loss_FirstOrderDerivatives + secondOrderLossTotal )/2
 
-    totalLoss = loss_PDEAndBoundary + gamma*totalLossDerivatives
+    totalLoss = loss_PDEAndBoundary + gamma*totalLossDerivatives + delta* deflationLoss(modelOut=modelOut, a = deflationLossCoeff)
     return totalLoss
     
 
@@ -103,3 +104,28 @@ def boundaryFunctionExtension(x: torch.Tensor, d:float)->torch.Tensor:
     out = trapezoidalFun(x1, d)* (x1* (1-x1)) / ((x1* (1-x1)) + (x2* (1-x2)) + maskZeroDenominator) - trapezoidalFun(x2, d)* (x2* (1-x2)) / ((x1* (1-x1)) + (x2* (1-x2)) + maskZeroDenominator)
     out = out * maskZeroDenominatorNegation
     return out
+
+
+def deflationLoss(modelOut:list[list[torch.Tensor]], a:float=1)->torch.Tensor:
+    """Deflation loss function to make sure that output functions are different from each other.
+        we basically compute sum_{i,j}( 1/(a* norm(func_i - func_j))^a.
+
+    Args:
+        modelOut (list[list[torch.Tensor]]): Output of our model.
+        a (float, optional): Coefficient for deflation funciton. If a gets bigger, then the L2 distance for the function is allowed to be bigger and we still get a low loss. Defaults to 1.
+
+    Returns:
+        torch.Tensor: Deflation loss.
+    """    
+    n = len(modelOut[0])
+    loss = torch.Tensor([0.], device=modelOut[0][0].device)
+    for i in range(n):
+        for j in range(n-1-i):
+            difference_ij_0 = modelOut[0][i] - modelOut[0][i + j]
+            difference_ij_1 = modelOut[1][i] - modelOut[1][i + j]
+            lossAux1 = 1/ torch.pow(a* torch.mean(torch.norm(difference_ij_0 , dim = 1)), a )
+            lossAux2 = 1/ torch.pow(a* torch.mean(torch.norm(difference_ij_1 , dim = 1)), a )
+            loss = loss + lossAux2 + lossAux1
+    
+    loss = 2*loss /(n* (n-1)) 
+    return loss

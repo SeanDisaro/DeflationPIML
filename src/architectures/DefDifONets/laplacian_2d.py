@@ -3,7 +3,7 @@ import deepxde as dde
 from typing import Callable, Tuple
 import torch
 
-class laplacian_2D_DefDifONet(nn.Module):
+class Laplacian_2D_DefDifONet(nn.Module):
     """
     This model is a Deflation Diffusion DeepONet; The dimension of the out put
     is 2 and it outputs on top all the derivatives of the two outputs up to order 2 which we need for the laplacians of the components.
