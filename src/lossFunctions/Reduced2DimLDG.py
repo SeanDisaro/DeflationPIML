@@ -22,7 +22,7 @@ def pimlLoss(modelOut:list[list[torch.Tensor]], boundaryPoints:torch.Tensor = No
     lossPDE_comp1 = 2*   (1 - Q_squaredNorm) *torch.concatenate(modelOut[0])    / (eps **2) + laplace_comp1
     lossPDE_comp2 = 2*   (1 - Q_squaredNorm) *torch.concatenate(modelOut[1])    / (eps **2) + laplace_comp2
     lossPDE = torch.mean(torch.norm(lossPDE_comp1, dim = 1)) + torch.mean(torch.norm(lossPDE_comp2, dim = 1)) 
-    if boundaryPoints == None or modelOutBoundary == None:
+    if boundaryPoints != None and modelOutBoundary != None:
         boundaryLoss = (    torch.mean(torch.norm( torch.concatenate(modelOutBoundary[0]) - trapezoidalFun(boundaryPoints, 3*eps), dim = 1))
                             + torch.mean(torch.norm( torch.concatenate(modelOutBoundary[1]) , dim = 1)))
         return alpha* lossPDE + beta  * boundaryLoss
@@ -77,9 +77,9 @@ def trapezoidalFun(x: torch.Tensor, d:float)->torch.Tensor:
         torch.Tensor: T_d(x) as in paper.
     """
     out = torch.zeros_like(x,dtype=float)
-    maskInterval_0_to_d       = x >=0     * x<=d
-    maskInterval_d_to_1Minusd = x >d      * x<(1-d)
-    maskInterval_1Minusd_to_1 = x >=(1-d) * x<=1
+    maskInterval_0_to_d       = (x >=0)   * (x<=d)
+    maskInterval_d_to_1Minusd = (x >d)      * (x<(1-d))
+    maskInterval_1Minusd_to_1 = (x >=(1-d)) * (x<=1)
     out = maskInterval_0_to_d       * (x / d)
     out = out + maskInterval_d_to_1Minusd * 1
     out = out + maskInterval_1Minusd_to_1 * ((1-x)/d)
@@ -100,7 +100,7 @@ def boundaryFunctionExtension(x: torch.Tensor, d:float)->torch.Tensor:
     x2 = x[:, 1]
     #this mask stuff is to make sure, that we do not devide by 0.
     maskZeroDenominator = (x1* (1-x1) == 0) * (x2* (1-x2) == 0)
-    maskZeroDenominatorNegation = not maskZeroDenominatorNegation
+    maskZeroDenominatorNegation = maskZeroDenominator == False
     out = trapezoidalFun(x1, d)* (x1* (1-x1)) / ((x1* (1-x1)) + (x2* (1-x2)) + maskZeroDenominator) - trapezoidalFun(x2, d)* (x2* (1-x2)) / ((x1* (1-x1)) + (x2* (1-x2)) + maskZeroDenominator)
     out = out * maskZeroDenominatorNegation
     return out

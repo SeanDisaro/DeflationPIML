@@ -54,29 +54,29 @@ def train(  model: Laplacian_2D_DefDifONet, x: torch.Tensor, numSolutions:int, e
     #this is only used if addRandomFeaturesToSolutions is True
     meanForRandomFeatures = torch.zeros(1,numFeaturesSolutions)
     stdForRandomFeatures = [learningRate*i*10 for i in range( 10 )]
-    lossesForPlot = []
-    xValueForPlot = [FrequencyReportLosses * i for i in range(epochs // FrequencyReportLosses)]
+
     #plotting settings:
     if showTrainingPlot:
         plt.ion()
         fig, ax = plt.subplots()
-        x = []
-        y = []
+        lossesForPlot = []
+        xValueForPlot = [FrequencyReportLosses * i for i in range(epochs // FrequencyReportLosses)]
         ax.set_ylim(0, 10)
         ax.set_xlim(0, epochs)
-        line, = ax.plot(x, y)
+ 
         ax.set_title("Live Loss Plot Training")
         ax.set_xlabel("Epoch")
         ax.set_ylabel("Loss")
+        line, = ax.plot(xValueForPlot[:len(lossesForPlot)], lossesForPlot)
 
     for epoch in tqdm(range(epochs)):
         optimizer.zero_grad()
         #add some random noise to feature representation of functions
         if addRandomFeaturesToSolutions:
             for idxListU, u in enumerate(listU):
-                randIdx = random.randint(0,10)
-                stdThisEpoch = stdForRandomFeatures[randIdx]
-                u = u + torch.normal(mean = meanForRandomFeatures,  std = stdThisEpoch, device = u.device)
+                randIdx = random.randint(0,9)
+                stdThisItter = stdForRandomFeatures[randIdx]
+                u = u + torch.normal(mean = meanForRandomFeatures,  std = stdThisItter)
                 listU[idxListU] = u
 
         #compute loss
@@ -112,7 +112,7 @@ def train(  model: Laplacian_2D_DefDifONet, x: torch.Tensor, numSolutions:int, e
             
             ax.set_ylim(0, max(lossesForPlot))
             ax.set_xlim(0,epoch)
-            line.set_ydata(y)
+            line.set_ydata(lossesForPlot)
             line.set_xdata(xValueForPlot[:len(lossesForPlot)])
 
             # Redraw the plot
