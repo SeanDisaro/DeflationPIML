@@ -20,6 +20,8 @@ class Laplacian_2D_DefDifONet(nn.Module):
                     geom: dde.geometry.geometry.Geometry,
                     DirichletHardConstraint: bool,
                     skipConnection: bool = False,
+                    normalizationBranch: bool = False,
+                    normalizationFactor: float = 10.,
                     DirichletConditionFunc1: Callable[[torch.Tensor], torch.Tensor] = None,
                     DirichletConditionFunc2: Callable[[torch.Tensor], torch.Tensor] = None
                     ):
@@ -33,6 +35,8 @@ class Laplacian_2D_DefDifONet(nn.Module):
         self.DirichletConditionFunc1 = DirichletConditionFunc1
         self.DirichletConditionFunc2 = DirichletConditionFunc2
         self.trunk_layer = trunk_layer
+        self.normalizationBranch = normalizationBranch
+        self.normalizationFactor = normalizationFactor
 
 
 
@@ -126,12 +130,16 @@ class Laplacian_2D_DefDifONet(nn.Module):
                                                                          list[torch.Tensor],list[torch.Tensor],
                                                                          list[torch.Tensor],list[torch.Tensor],
                                                                          list[torch.Tensor],list[torch.Tensor],list[torch.Tensor]]:
+        xClone = x.clone()
         #output TrunkNet
         trunkOut = self.trunk(x)
 
         #output BranchNet
         n = len(listU)
-        branchOut = self.totalBranch(listU)  
+        branchOut = self.totalBranch(listU)
+        if self.normalizationBranch:
+            for i in range(n):
+                branchOut[i] = self.normalizationFactor * torch.nn.functional.softsign(branchOut[i])
         batchSize = trunkOut.shape[0]
         branchTiledFeatures = []
 
@@ -155,12 +163,12 @@ class Laplacian_2D_DefDifONet(nn.Module):
             
         if self.DirichletHardConstraint:
             for idxSol in range(n):
-                out1[idxSol] = out1[idxSol] * self.geom.boundary_constraint_factor(x, smoothness="C0+")
-                out2[idxSol] = out2[idxSol] * self.geom.boundary_constraint_factor(x, smoothness="C0+")
+                out1[idxSol] = out1[idxSol] * self.geom.boundary_constraint_factor(xClone, smoothness="C0+")
+                out2[idxSol] = out2[idxSol] * self.geom.boundary_constraint_factor(xClone, smoothness="C0+")
                 if self.DirichletConditionFunc1 != None:
-                    out1[idxSol] = out1[idxSol] + self.DirichletConditionFunc1(x).view(-1,1)
+                    out1[idxSol] = out1[idxSol] + self.DirichletConditionFunc1(xClone).view(-1,1)
                 if self.DirichletConditionFunc2 != None:
-                    out2[idxSol] = out2[idxSol] + self.DirichletConditionFunc2(x).view(-1,1)
+                    out2[idxSol] = out2[idxSol] + self.DirichletConditionFunc2(xClone).view(-1,1)
 
         return out1, out2, out1_dx, out2_dx, out1_dxx, out2_dxx, out1_dy, out2_dy, out1_dyy, out2_dyy, branchOut
 

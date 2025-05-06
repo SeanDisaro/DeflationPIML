@@ -8,7 +8,7 @@ from tests.Reduced2DimLDG.run import run
 
 logger = setup_logging()
 
-logger = logging.getLogger(__name__)
+#logger = logging.getLogger(__name__)
 
 
 if __name__ == "__main__":

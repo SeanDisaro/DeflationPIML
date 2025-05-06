@@ -19,22 +19,20 @@ def derivativeLoss2D(x: torch.Tensor ,out1: list[torch.Tensor], out2: list[torch
     batchSizeTimesNumInputfunc = batchSize *len(out1)
 
     out1_Concat = torch.concatenate(out1)
-    out1_dxAD = torch.autograd.grad(out1_Concat.view(-1,1), x[:,0].view(-1,1),
+    out1_AD = torch.autograd.grad(out1_Concat.view(-1,1), x,
                                      torch.ones((batchSizeTimesNumInputfunc, 1), requires_grad = True).to("cuda"),
                                      allow_unused=True, create_graph=True)[0]
-    
+    out1_dxAD = out1_AD[:,0]
+    out1_dyAD = out1_AD[:,1]
+
     out2_Concat = torch.concatenate(out2)
-    out2_dxAD = torch.autograd.grad(out2_Concat.view(-1,1), x[:,0].view(-1,1),
+    out2_AD = torch.autograd.grad(out2_Concat.view(-1,1), x,
                                      torch.ones((batchSizeTimesNumInputfunc, 1), requires_grad = True).to("cuda"),
                                        allow_unused=True, create_graph=True)[0]
+    out2_dxAD= out2_AD[:,0]
+    out2_dyAD= out2_AD[:,1]
     
-    out1_dyAD = torch.autograd.grad(out1_Concat.view(-1,1), x[:,1].view(-1,1),
-                                     torch.ones((batchSizeTimesNumInputfunc, 1), requires_grad = True).to("cuda"),
-                                       allow_unused=True, create_graph=True)[0]
-    
-    out2_dyAD = torch.autograd.grad(out2_Concat.view(-1,1), x[:,1].view(-1,1),
-                                     torch.ones((batchSizeTimesNumInputfunc, 1), requires_grad = True).to("cuda"),
-                                       allow_unused=True, create_graph=True)[0]
+
     
 
     return (torch.mean(torch.norm(out1_dxAD - torch.concatenate(out1_dx),dim=1)) +
@@ -58,7 +56,7 @@ def derivativeLoss(x: torch.Tensor,out: list[torch.Tensor], out_dx: list[torch.T
   out_dx_Concat = torch.concatenate(out_dx)
   batchSize = x.shape[0]
   batchSizeTimesNumInputfunc = batchSize *len(out)
-  out_dxAD = torch.autograd.grad(out_Concat.view(-1,1), x[:,component].view(-1,1),
+  out_dxAD = torch.autograd.grad(out_Concat.view(-1,1), x,
                                      torch.ones((batchSizeTimesNumInputfunc, 1), requires_grad = True).to("cuda"),
-                                       allow_unused=True, create_graph=True)[0]
+                                       allow_unused=True, create_graph=True)[0] [:, component]
   return torch.mean(torch.norm(out_dxAD - out_dx_Concat,dim=1))

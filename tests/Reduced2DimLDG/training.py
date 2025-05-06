@@ -8,12 +8,13 @@ from pathlib import Path, PurePath
 from tqdm import tqdm
 import logging
 from config import *
+from logging_config import setup_logging
+import dill as pickle
+
+logger = setup_logging()
 
 
-
-logger = logging.getLogger(__name__)
-
-def train(  model: Laplacian_2D_DefDifONet, x: torch.Tensor, numSolutions:int, epochs: int, boundaryPoints: torch.Tensor = None,
+def train(  model: Laplacian_2D_DefDifONet, x: torch.Tensor, numSolutions:int, epochs: int, solutionFeatures:list[torch.Tensor] =None, boundaryPoints: torch.Tensor = None,
             learningRate:float  = 1e-4,loadBestModel:bool = False, verbose:bool = True, showTrainingPlot:bool = True, modelName: str= "Laplacian_2D_DefDifONet",
             addRandomFeaturesToSolutions: bool = True, alpha:float = 1., beta:float = 0.1, gamma:float = 1., delta:float = 1, FrequencyReportLosses:int = 50)->Tuple[Laplacian_2D_DefDifONet, list[torch.Tensor]]:
     """This is the training funciton for the DifDefONet model for the reduced 2dim LDG model. It returns the trained model and the feature list containing the solution functions, which can be used with the trained model.
@@ -23,6 +24,7 @@ def train(  model: Laplacian_2D_DefDifONet, x: torch.Tensor, numSolutions:int, e
         x (torch.Tensor): collocation points where we want to train the model.
         numSolutions (int): number of solutions which we want to obtain in the end
         epochs (int): Number of epochs during training.
+        solutionFeatures (list[torch.Tensor], optional): Feature representation of the solution. If this is none, then it is initialized randomly. Defaults to None.
         boundaryPoints (torch.Tensor, optional): Boundary Points used for computing loss on boundary. If this is set to None, then no boundary loss will be computed. Defaults to None.
         learningRate (float, optional): Learnining Rate. Defaults to 1e-4.
         loadBestModel (bool, optional): Model with the lowest loss is constantly saved if this is True and in the end the model which had the lowest loss is returned.
@@ -45,7 +47,10 @@ def train(  model: Laplacian_2D_DefDifONet, x: torch.Tensor, numSolutions:int, e
     optimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
     bestLoss = torch.inf
     numFeaturesSolutions = model.numBranchFeatures *10 # times 10 is because of the number of outputs we have, i.e. the derivatives and the dimesnion of the solution (which is 2 here)
-    listU = [ torch.rand((1,numFeaturesSolutions))  for i in range(numSolutions)]
+    if solutionFeatures == None:
+        listU = [ torch.rand((1,numFeaturesSolutions))  for i in range(numSolutions)]
+    else:
+        listU = solutionFeatures
 
     useBoundaryLossTerm = False
     if boundaryPoints != None:
@@ -71,13 +76,15 @@ def train(  model: Laplacian_2D_DefDifONet, x: torch.Tensor, numSolutions:int, e
 
     for epoch in tqdm(range(epochs)):
         optimizer.zero_grad()
-        #add some random noise to feature representation of functions
-        if addRandomFeaturesToSolutions:
-            for idxListU, u in enumerate(listU):
+        
+        # detach feature representation of funcitons
+        for idxListU, u in enumerate(listU):
+            #add some random noise to feature representation of functions
+            if addRandomFeaturesToSolutions:
                 randIdx = random.randint(0,9)
                 stdThisItter = stdForRandomFeatures[randIdx]
                 u = u + torch.normal(mean = meanForRandomFeatures,  std = stdThisItter)
-                listU[idxListU] = u
+            listU[idxListU] = u.detach()
 
         #compute loss
         modelOut = model(listU, x)
@@ -96,8 +103,9 @@ def train(  model: Laplacian_2D_DefDifONet, x: torch.Tensor, numSolutions:int, e
             bestLoss = loss.item()
             #save model; pathTrainedModels is defined in config
             if loadBestModel:
-                torch.save(model, PurePath(pathTrainedModels, modelName +".pt"))
-        
+                #torch.save(model, PurePath(pathTrainedModels, modelName +".pt"))
+                with open(PurePath(pathTrainedModels, modelName +".pkl"), "wb") as f:
+                    pickle.dump(model, f)
         loss.backward(retain_graph=True)
         optimizer.step()
 
@@ -106,26 +114,31 @@ def train(  model: Laplacian_2D_DefDifONet, x: torch.Tensor, numSolutions:int, e
             if verbose:
                 logger.info(f"epoch {epoch};     loss............{loss.item()}")
 
-        #plotting
-        if showTrainingPlot:
-            lossesForPlot.append(loss.item())
+            #plotting
+            if showTrainingPlot:
+                lossesForPlot.append(loss.item())
             
-            ax.set_ylim(0, max(lossesForPlot))
-            ax.set_xlim(0,epoch)
-            line.set_ydata(lossesForPlot)
-            line.set_xdata(xValueForPlot[:len(lossesForPlot)])
+                ax.set_ylim(0, max(lossesForPlot))
+                ax.set_xlim(0,epoch)
+                line.set_ydata(lossesForPlot)
+                line.set_xdata(xValueForPlot[:len(lossesForPlot)])
 
-            # Redraw the plot
-            fig.canvas.draw()
-            fig.canvas.flush_events()
+                # Redraw the plot
+                fig.canvas.draw()
+                fig.canvas.flush_events()
 
 
         epoch += 1
 
     if loadBestModel:
         #load best model; pathTrainedModels is defined in config
-        model = torch.load(PurePath(pathTrainedModels, modelName +".pt")).to("cuda")
+        #model = torch.load(PurePath(pathTrainedModels, modelName +".pt")).to("cuda")
+        with open(PurePath(pathTrainedModels, modelName +".pkl"), "rb") as f:
+            model = pickle.load(f)
     else:
-        torch.save(model, PurePath(pathTrainedModels, modelName +".pt"))
+        #torch.save(model, PurePath(pathTrainedModels, modelName +".pt"))
+        with open(PurePath(pathTrainedModels, modelName +".pkl"), "wb") as f:
+            #pickle.dump(model, f)
+            pass
 
     return model, listU
