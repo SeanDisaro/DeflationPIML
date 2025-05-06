@@ -92,7 +92,7 @@ def train(  model: Laplacian_2D_DefDifONet, x: torch.Tensor, numSolutions:int, e
         if useBoundaryLossTerm:
             modelOutBoundary = model(listU, x)
         loss = defDifONetLossPIML(  x = x, modelOut = modelOut, boundaryPoints = boundaryPoints, modelOutBoundary = modelOutBoundary,
-                                    eps = 0.02, deflationLossCoeff=1, alpha = alpha, beta = beta, gamma = gamma, delta = delta)
+                                    eps = 0.02, deflationLossCoeff=0.1, alpha = alpha, beta = beta, gamma = gamma, delta = delta)
 
         #update features of solution funciton representation
         for k in range(numSolutions):

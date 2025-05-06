@@ -1,3 +1,4 @@
 models/*
-data/*
+data/Reduced2DimLDG/SolutionFeatures/*
+data/Reduced2DimLDG/trueSolution/*
 logging.log
