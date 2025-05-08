@@ -6,7 +6,7 @@ from logging_config import setup_logging
 import logging
 from tests.Reduced2DimLDG.run import run
 
-logger = setup_logging()
+#logger = setup_logging()
 
 #logger = logging.getLogger(__name__)
 

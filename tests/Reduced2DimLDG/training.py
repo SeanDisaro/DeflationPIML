@@ -16,7 +16,7 @@ logger = setup_logging()
 
 def train(  model: Laplacian_2D_DefDifONet, x: torch.Tensor, numSolutions:int, epochs: int, solutionFeatures:list[torch.Tensor] =None, boundaryPoints: torch.Tensor = None,
             learningRate:float  = 1e-4,loadBestModel:bool = False, verbose:bool = True, showTrainingPlot:bool = True, modelName: str= "Laplacian_2D_DefDifONet",
-            addRandomFeaturesToSolutions: bool = True, alpha:float = 1., beta:float = 0.1, gamma:float = 1., delta:float = 1, FrequencyReportLosses:int = 50)->Tuple[Laplacian_2D_DefDifONet, list[torch.Tensor]]:
+            addRandomFeaturesToSolutions: bool = True, alpha:float = 1., beta:float = 0.1, gamma:float = 1., delta:float = 1, deflationCoefficient:float = 1., FrequencyReportLosses:int = 50)->Tuple[Laplacian_2D_DefDifONet, list[torch.Tensor]]:
     """This is the training funciton for the DifDefONet model for the reduced 2dim LDG model. It returns the trained model and the feature list containing the solution functions, which can be used with the trained model.
 
     Args:
@@ -36,7 +36,8 @@ def train(  model: Laplacian_2D_DefDifONet, x: torch.Tensor, numSolutions:int, e
         alpha (float, optional): Weight coefficient for PDE loss. Defaults to 1..
         beta (float, optional): Weight coefficient for boundary loss. Defaults to 0.1.
         gamma (float, optional): Weight coefficient for derivative loss. Defaults to 1..
-        dleta (float, optional): Weight coefficient for deflation loss. Defaults to 1..
+        delta (float, optional): Weight coefficient for deflation loss. Defaults to 1..
+        deflationCoefficient (float, optional): Coefficient to adjust deflation loss. Defaults to 1..
         FrequencyReportLosses (int, optional): _description_. Defaults to 50.
 
     Returns:
@@ -92,7 +93,7 @@ def train(  model: Laplacian_2D_DefDifONet, x: torch.Tensor, numSolutions:int, e
         if useBoundaryLossTerm:
             modelOutBoundary = model(listU, x)
         loss = defDifONetLossPIML(  x = x, modelOut = modelOut, boundaryPoints = boundaryPoints, modelOutBoundary = modelOutBoundary,
-                                    eps = 0.02, deflationLossCoeff=0.1, alpha = alpha, beta = beta, gamma = gamma, delta = delta)
+                                    eps = 0.02, deflationLossCoeff=deflationCoefficient, alpha = alpha, beta = beta, gamma = gamma, delta = delta)
 
         #update features of solution funciton representation
         for k in range(numSolutions):

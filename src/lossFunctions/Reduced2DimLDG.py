@@ -19,8 +19,8 @@ def pimlLoss(modelOut:list[list[torch.Tensor]], boundaryPoints:torch.Tensor = No
     laplace_comp1 = torch.concatenate(modelOut[4]) + torch.concatenate(modelOut[8])
     laplace_comp2 = torch.concatenate(modelOut[5]) + torch.concatenate(modelOut[9])
     Q_squaredNorm = torch.concatenate(modelOut[0])**2 + torch.concatenate(modelOut[1])**2
-    lossPDE_comp1 = 2*   (1 - Q_squaredNorm) *torch.concatenate(modelOut[0])    + (eps **2)*laplace_comp1#2*   (1 - Q_squaredNorm) *torch.concatenate(modelOut[0])    / (eps **2) + laplace_comp1
-    lossPDE_comp2 = 2*   (1 - Q_squaredNorm) *torch.concatenate(modelOut[1])    + (eps **2)*laplace_comp2#2*   (1 - Q_squaredNorm) *torch.concatenate(modelOut[1])    / (eps **2) + laplace_comp2
+    lossPDE_comp1 = 200*   (1 - Q_squaredNorm) *torch.concatenate(modelOut[0])    + (100*(eps **2))*laplace_comp1#2*   (1 - Q_squaredNorm) *torch.concatenate(modelOut[0])    / (eps **2) + laplace_comp1
+    lossPDE_comp2 = 200*   (1 - Q_squaredNorm) *torch.concatenate(modelOut[1])    + (100*(eps **2))*laplace_comp2#2*   (1 - Q_squaredNorm) *torch.concatenate(modelOut[1])    / (eps **2) + laplace_comp2
     lossPDE = torch.mean(torch.norm(lossPDE_comp1, dim = 1)) + torch.mean(torch.norm(lossPDE_comp2, dim = 1)) 
     if boundaryPoints != None and modelOutBoundary != None:
         boundaryLoss = (    torch.mean(torch.norm( torch.concatenate(modelOutBoundary[0]) - trapezoidalFun(boundaryPoints, 3*eps), dim = 1))
@@ -126,7 +126,7 @@ def deflationLoss(modelOut:list[list[torch.Tensor]], a:float=1)->torch.Tensor:
             difference_ij_0 = modelOut[0][i] - modelOut[0][i + j+1]
             difference_ij_1 = modelOut[1][i] - modelOut[1][i + j+1]
             lossAux1 = torch.min(torch.maximum(100-torch.pow(a* torch.mean(torch.norm(difference_ij_0 , dim = 1)), a ), torch.tensor(0.)),1/ torch.pow(a* torch.mean(torch.norm(difference_ij_0 , dim = 1)), a ))
-            lossAux2 = torch.min(torch.max(100-torch.pow(a* torch.mean(torch.norm(difference_ij_0 , dim = 1)), a ), torch.tensor(0.)), 1/ torch.pow(a* torch.mean(torch.norm(difference_ij_1 , dim = 1)), a ))
+            lossAux2 = torch.min(torch.max(100-torch.pow(a* torch.mean(torch.norm(difference_ij_1 , dim = 1)), a ), torch.tensor(0.)), 1/ torch.pow(a* torch.mean(torch.norm(difference_ij_1 , dim = 1)), a ))
             loss = loss + lossAux2 + lossAux1
     
     loss = 2*loss /(n* (n-1)) 
