@@ -8,15 +8,14 @@ from pathlib import Path, PurePath
 from tqdm import tqdm
 import logging
 from config import *
-from logging_config import setup_logging
 import dill as pickle
 
-logger = setup_logging()
+logger = logging.getLogger("logging_config")
 
 
 def train(  model: Laplacian_2D_DefDifONet, x: torch.Tensor, numSolutions:int, epochs: int, solutionFeatures:list[torch.Tensor] =None, boundaryPoints: torch.Tensor = None,
             learningRate:float  = 1e-4,loadBestModel:bool = False, verbose:bool = True, showTrainingPlot:bool = True, modelName: str= "Laplacian_2D_DefDifONet",
-            addRandomFeaturesToSolutions: bool = True, alpha:float = 1., beta:float = 0.1, gamma:float = 1., delta:float = 1, deflationCoefficient:float = 1., FrequencyReportLosses:int = 50)->Tuple[Laplacian_2D_DefDifONet, list[torch.Tensor]]:
+            addRandomFeaturesToSolutions: bool = True, alpha:float = 1., beta:float = 0.1, gamma:float = 1., delta:float = 1, deflationLossPoints: tuple[float,float] = (10000.,1.) , deflationCoefficient:float = 1., FrequencyReportLosses:int = 50)->Tuple[Laplacian_2D_DefDifONet, list[torch.Tensor]]:
     """This is the training funciton for the DifDefONet model for the reduced 2dim LDG model. It returns the trained model and the feature list containing the solution functions, which can be used with the trained model.
 
     Args:
@@ -37,6 +36,7 @@ def train(  model: Laplacian_2D_DefDifONet, x: torch.Tensor, numSolutions:int, e
         beta (float, optional): Weight coefficient for boundary loss. Defaults to 0.1.
         gamma (float, optional): Weight coefficient for derivative loss. Defaults to 1..
         delta (float, optional): Weight coefficient for deflation loss. Defaults to 1..
+        deflationLossPoints (tuple[float,float], optional): Points adjusting the linear deflation loss function. This contains (maxLoss, maxDistance). Defaults to (10000.,1.).
         deflationCoefficient (float, optional): Coefficient to adjust deflation loss. Defaults to 1..
         FrequencyReportLosses (int, optional): _description_. Defaults to 50.
 
@@ -44,7 +44,7 @@ def train(  model: Laplacian_2D_DefDifONet, x: torch.Tensor, numSolutions:int, e
         Tuple[Laplacian_2D_DefDifONet, list[torch.Tensor]]: Returns trained model and feature representation of the solution funcitons.
     """    
 
-
+    pathSolutionFeatures = PurePath(pathData, "Reduced2DimLDG/SolutionFeatures/features.pkl")
     optimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
     bestLoss = torch.inf
     numFeaturesSolutions = model.numBranchFeatures *10 # times 10 is because of the number of outputs we have, i.e. the derivatives and the dimesnion of the solution (which is 2 here)
@@ -91,13 +91,13 @@ def train(  model: Laplacian_2D_DefDifONet, x: torch.Tensor, numSolutions:int, e
         modelOut = model(listU, x)
         modelOutBoundary = None
         if useBoundaryLossTerm:
-            modelOutBoundary = model(listU, x)
+            modelOutBoundary = model(listU, boundaryPoints)
         loss = defDifONetLossPIML(  x = x, modelOut = modelOut, boundaryPoints = boundaryPoints, modelOutBoundary = modelOutBoundary,
-                                    eps = 0.02, deflationLossCoeff=deflationCoefficient, alpha = alpha, beta = beta, gamma = gamma, delta = delta)
+                                    eps = 0.02,deflationLossPoints = deflationLossPoints, deflationLossCoeff=deflationCoefficient, alpha = alpha, beta = beta, gamma = gamma, delta = delta)
 
         #update features of solution funciton representation
         for k in range(numSolutions):
-            listU[k] = modelOut[-1][k]
+            listU[k] = modelOut[10][k]
 
         #update best loss so far
         if loss.item() < bestLoss:
@@ -107,6 +107,9 @@ def train(  model: Laplacian_2D_DefDifONet, x: torch.Tensor, numSolutions:int, e
                 #torch.save(model, PurePath(pathTrainedModels, modelName +".pt"))
                 with open(PurePath(pathTrainedModels, modelName +".pkl"), "wb") as f:
                     pickle.dump(model, f)
+                with open(pathSolutionFeatures , "wb") as f:
+                    pickle.dump(listU, f)
+
         loss.backward(retain_graph=True)
         optimizer.step()
 
@@ -135,11 +138,19 @@ def train(  model: Laplacian_2D_DefDifONet, x: torch.Tensor, numSolutions:int, e
         #load best model; pathTrainedModels is defined in config
         #model = torch.load(PurePath(pathTrainedModels, modelName +".pt")).to("cuda")
         with open(PurePath(pathTrainedModels, modelName +".pkl"), "rb") as f:
-            model = pickle.load(f)
+            model = pickle.load(f).to("cuda:0")
+
+        with open(pathSolutionFeatures, "rb") as f:
+            listU = pickle.load(f)
+        for i in range(len(listU)):
+            listU[i] = listU[i].to("cuda:0")
     else:
         #torch.save(model, PurePath(pathTrainedModels, modelName +".pt"))
         with open(PurePath(pathTrainedModels, modelName +".pkl"), "wb") as f:
-            #pickle.dump(model, f)
-            pass
+            pickle.dump(model, f)
 
+        
+        with open(pathSolutionFeatures , "wb") as f:
+            pickle.dump(listU, f)
+            
     return model, listU

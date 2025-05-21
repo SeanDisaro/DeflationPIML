@@ -1,7 +1,16 @@
 import torch
 from src.lossFunctions.derivativeLoss import derivativeLoss2D, derivativeLoss
+import logging
+import deepxde as dde
+import matplotlib.pyplot as plt
+import numpy as np
+geomBoundaryExtension = dde.geometry.geometry_2d.Rectangle([0.,0.], [1.,1.])
 
-def pimlLoss(modelOut:list[list[torch.Tensor]], boundaryPoints:torch.Tensor = None, modelOutBoundary:list[list[torch.Tensor]] = None ,
+logger = logger = logging.getLogger("logging_config")
+
+
+
+def pimlLoss(modelOut:list[list[torch.Tensor]],x, boundaryPoints:torch.Tensor = None, modelOutBoundary:list[list[torch.Tensor]] = None ,
                 eps:float = 0.02, alpha:float = 1., beta:float = 0.1)->torch.Tensor:
     """This is the physics informed loss function for this problem, which is created with the strong formulation of the PDE.
 
@@ -15,24 +24,40 @@ def pimlLoss(modelOut:list[list[torch.Tensor]], boundaryPoints:torch.Tensor = No
 
     Returns:
         torch.Tensor: loss
-    """ 
-    laplace_comp1 = torch.concatenate(modelOut[4]) + torch.concatenate(modelOut[8])
-    laplace_comp2 = torch.concatenate(modelOut[5]) + torch.concatenate(modelOut[9])
-    Q_squaredNorm = torch.concatenate(modelOut[0])**2 + torch.concatenate(modelOut[1])**2
-    lossPDE_comp1 = 200*   (1 - Q_squaredNorm) *torch.concatenate(modelOut[0])    + (100*(eps **2))*laplace_comp1#2*   (1 - Q_squaredNorm) *torch.concatenate(modelOut[0])    / (eps **2) + laplace_comp1
-    lossPDE_comp2 = 200*   (1 - Q_squaredNorm) *torch.concatenate(modelOut[1])    + (100*(eps **2))*laplace_comp2#2*   (1 - Q_squaredNorm) *torch.concatenate(modelOut[1])    / (eps **2) + laplace_comp2
-    lossPDE = torch.mean(torch.norm(lossPDE_comp1, dim = 1)) + torch.mean(torch.norm(lossPDE_comp2, dim = 1)) 
+    """
+    lossPDE = torch.tensor(0.)
+    for i in range(len(modelOut[0])):
+        dummy = False
+        laplace_comp1 = modelOut[4][i] + modelOut[8][i]
+        laplace_comp2 = modelOut[5][i] + modelOut[9][i]
+        Q_squaredNorm = modelOut[0][i] **2 + modelOut[1][i] **2
+        lossPDE_comp1 = 200*   (1 - Q_squaredNorm) *modelOut[0][i]    + ((10*eps) **2)*laplace_comp1
+        lossPDE_comp2 = 200*   (1 - Q_squaredNorm) *modelOut[1][i]    + ((10*eps) **2)*laplace_comp2
+        lossPDE = lossPDE +  torch.mean(torch.norm(lossPDE_comp1, dim = 1)) + torch.mean(torch.norm(lossPDE_comp2, dim = 1)) 
+        
+        if dummy:
+            plt.clf()
+            plt.quiver(
+                x[:,0].detach().cpu().numpy()[:200], x[:,1].detach().cpu().numpy()[:200],
+                lossPDE_comp1.detach().cpu().numpy()[:200],
+                lossPDE_comp2.detach().cpu().numpy()[:200],      
+                angles='xy', scale_units='xy', scale=20, width=0.0015*10/33
+                )
+            plt.show()
+            
+    # TODO fix the boundary loss part, i.e. make it work for the output list
+
     if boundaryPoints != None and modelOutBoundary != None:
-        boundaryLoss = (    torch.mean(torch.norm( torch.concatenate(modelOutBoundary[0]) - trapezoidalFun(boundaryPoints, 3*eps), dim = 1))
+        boundaryLoss = (    torch.mean(torch.norm( torch.concatenate(modelOutBoundary[0]) - boundaryFunctionExtension(boundaryPoints, 3*eps), dim = 1))
                             + torch.mean(torch.norm( torch.concatenate(modelOutBoundary[1]) , dim = 1)))
         return alpha* lossPDE + beta  * boundaryLoss
     else:
-        return lossPDE
+        return alpha*lossPDE
     
 
 
 def defDifONetLossPIML( x: torch.Tensor, modelOut:list[list[torch.Tensor]], boundaryPoints:torch.Tensor = None,modelOutBoundary:list[list[torch.Tensor]] = None ,
-                    eps:float = 0.02, deflationLossCoeff:float = 1., alpha:float = 1., beta:float = 0.1, gamma:float = 1., delta: float = 1.) -> torch.Tensor:
+                    eps:float = 0.02, deflationLossPoints: tuple[float,float] = (10000.,1.) ,deflationLossCoeff:float = 1., alpha:float = 1., beta:float = 0.1, gamma:float = 1., delta: float = 1.) -> torch.Tensor:
     """This is the loss funciton you want to use for the DefDifONet. This includes losses for the reduced 2dim LDG PDE, derivative losses and a boundary loss (optional). Derivative loss is computed via auto differentiation.
     Args:
         x (torch.Tensor): points which were put into modelOut. Note that requires_grad needs to be set to true.
@@ -41,6 +66,8 @@ def defDifONetLossPIML( x: torch.Tensor, modelOut:list[list[torch.Tensor]], boun
         modelOutBoundary (list[torch.Tensor], optional): Output of model on the boundary. If this is set to None, then no boundary loss is computed. Defaults to None.
         eps (float, optional): epsilon from LDG model, as in paper. Defaults to 0.02.
         eps (float, optional): Deflation loss coefficient, see deflation loss. Defaults to 1.
+        deflationLossPoints (tuple[float,float], optional): Points adjusting the linear deflation loss function. This contains (maxLoss, maxDistance). Defaults to (10000.,1.).
+        deflationLossCoeff (float, optional): Deflation coefficient from original deflation loss function. Defaults to 1.
         alpha (float, optional): Weigth of PDE loss in total loss funciton. Defaults to 1..
         beta (float, optional): Weight of boundary loss in total loss function. Defaults to 0.1.
         gamma (float, optional): Weight of derivative loss in total loss funciton. Defaults to 1.
@@ -48,23 +75,42 @@ def defDifONetLossPIML( x: torch.Tensor, modelOut:list[list[torch.Tensor]], boun
     Returns:
         torch.Tensor: alpha*PDE_loss + beta* boundary_loss+ gamma*(1stOrderDerivatives_loss+ 2ndOrderDerivative_loss) + delta* deflationLoss
     """
-    loss_PDEAndBoundary = pimlLoss(  modelOut = modelOut, boundaryPoints = boundaryPoints, modelOutBoundary = modelOutBoundary ,
+    loss_PDEAndBoundary = pimlLoss(  modelOut = modelOut,x=x, boundaryPoints = boundaryPoints, modelOutBoundary = modelOutBoundary ,
                                     eps = eps, alpha = alpha, beta = beta)
-    loss_FirstOrderDerivatives = derivativeLoss2D(x=x, out1 = modelOut[0], out2 = modelOut[1], out1_dx = modelOut[2], out2_dx = modelOut[3], out1_dy = modelOut[6], out2_dy = modelOut[7])/4
+
+    # derivative of first component makes problems because of hard constraint architecture, so we have to treat its derivatives differently.
+    dx_Order_Comp1_pre_transform  =   derivativeLoss(x = x,out = modelOut[0], out_dx = modelOut[2], component = 0, p = 1 ) 
+    dy_Order_Comp1_pre_transform  =   derivativeLoss(x = x,out = modelOut[0], out_dx = modelOut[6], component = 1, p = 1 ) 
+    #logger.info(f"dx_Order_Comp1:.......{dx_Order_Comp1_pre_transform:.2f}...........................dy_Order_Comp1:.......{dy_Order_Comp1_pre_transform:.2f}")
+    dx_Order_Comp1  =  dx_Order_Comp1_pre_transform 
+    dy_Order_Comp1  = dy_Order_Comp1_pre_transform 
+    #logger.info(f"dx_Order_Comp1_Transformed:.......{dx_Order_Comp1:.2f}...........................dy_Order_Comp1_Transformed:.......{dy_Order_Comp1:.2f}")
+
+
+    dx_Order_Comp2  = derivativeLoss(x = x,out = modelOut[1], out_dx = modelOut[3], component = 0 )
+    dy_Order_Comp2  = derivativeLoss(x = x,out = modelOut[1], out_dx = modelOut[7], component = 1 )
 
     dxx_Order_Comp1 = derivativeLoss(x = x,out = modelOut[2], out_dx = modelOut[4], component = 0 )
     dxx_Order_Comp2 = derivativeLoss(x = x,out = modelOut[3], out_dx = modelOut[5], component = 0 )
     dyy_Order_Comp1 = derivativeLoss(x = x,out = modelOut[6], out_dx = modelOut[8], component = 1 )
     dyy_Order_Comp2 = derivativeLoss(x = x,out = modelOut[7], out_dx = modelOut[9], component = 1 )
 
-    secondOrderLossTotal = dxx_Order_Comp1 + dxx_Order_Comp2 + dyy_Order_Comp1 + dyy_Order_Comp2
-    secondOrderLossTotal = secondOrderLossTotal/4
+    totalLossDerivatives = (dx_Order_Comp1 + dy_Order_Comp1 + dx_Order_Comp2 + dy_Order_Comp2 + dxx_Order_Comp1 + dxx_Order_Comp2 + dyy_Order_Comp1 + dyy_Order_Comp2)
 
-    totalLossDerivatives = ( loss_FirstOrderDerivatives + secondOrderLossTotal )/2
-    deflationLossOut = deflationLoss(modelOut=modelOut, a = deflationLossCoeff)
+
+
+    deflationLossOut = linearDeflationLoss(modelOut = modelOut, maxLoss = deflationLossPoints[0], maxDistance = deflationLossPoints[1]) #deflationLoss(modelOut=modelOut, a = deflationLossCoeff)
+    logger.info("--------------------------------------------------------------------------------------------------------------------------------")
+    logger.info(f"PDE Loss: {loss_PDEAndBoundary.item():.2f}----Derivative Loss: {gamma*totalLossDerivatives.item():.2f}----Deflation Loss: {delta*deflationLossOut.item():.2f}")
     totalLoss = loss_PDEAndBoundary + gamma*totalLossDerivatives + delta* deflationLossOut
     return totalLoss
-    
+
+
+def defDifONetLossPIML_ModelWithOutDerivative(  x: torch.Tensor, modelOut:list[list[torch.Tensor]], boundaryPoints:torch.Tensor = None,modelOutBoundary:list[list[torch.Tensor]] = None ,
+                                                eps:float = 0.02, deflationLossPoints: tuple[float,float] = (10000.,1.) ,deflationLossCoeff:float = 1., alpha:float = 1., beta:float = 0.1,
+                                                  gamma:float = 1., delta: float = 1.) -> torch.Tensor:
+    pass
+
 
 def trapezoidalFun(x: torch.Tensor, d:float)->torch.Tensor:
     """This is the funciton T_d(x) from the paper.
@@ -103,7 +149,29 @@ def boundaryFunctionExtension(x: torch.Tensor, d:float)->torch.Tensor:
     maskZeroDenominatorNegation = maskZeroDenominator == False
     out = trapezoidalFun(x1, d)* (x1* (1-x1)) / ((x1* (1-x1)) + (x2* (1-x2)) + maskZeroDenominator) - trapezoidalFun(x2, d)* (x2* (1-x2)) / ((x1* (1-x1)) + (x2* (1-x2)) + maskZeroDenominator)
     out = out * maskZeroDenominatorNegation
+    out = trapezoidalFun(x1, d).view(-1,1)* ((x2)**2 ).view(-1,1)   -   trapezoidalFun(x2, d).view(-1,1)* ((2*x1-1)**2 ).view(-1,1)
     return out
+
+
+def trapezoidalFunDerivative(x: torch.Tensor, d:float)->torch.Tensor:
+    """This is the derivative T'_d(x) for the function T_d(x) from the paper.
+
+    Args:
+        x (torch.Tensor): one dimensional x values.
+        d (float): parameter for the function.
+
+    Returns:
+        torch.Tensor: T'_d(x).
+    """
+    oneOverD = 1 / d
+    out = torch.zeros_like(x,dtype=float)
+    maskInterval_0_to_d       = (x >=0)   * (x<=d)
+    maskInterval_1Minusd_to_1 = (x >=(1-d)) * (x<=1)
+    out = maskInterval_0_to_d  * oneOverD
+    out = out + maskInterval_1Minusd_to_1 *(- oneOverD)
+    return out
+
+
 
 
 def deflationLoss(modelOut:list[list[torch.Tensor]], a:float=1)->torch.Tensor:
@@ -125,8 +193,39 @@ def deflationLoss(modelOut:list[list[torch.Tensor]], a:float=1)->torch.Tensor:
         for j in range(n-1-i):
             difference_ij_0 = modelOut[0][i] - modelOut[0][i + j+1]
             difference_ij_1 = modelOut[1][i] - modelOut[1][i + j+1]
-            lossAux1 = torch.min(torch.maximum(100-torch.pow(a* torch.mean(torch.norm(difference_ij_0 , dim = 1)), a ), torch.tensor(0.)),1/ torch.pow(a* torch.mean(torch.norm(difference_ij_0 , dim = 1)), a ))
-            lossAux2 = torch.min(torch.max(100-torch.pow(a* torch.mean(torch.norm(difference_ij_1 , dim = 1)), a ), torch.tensor(0.)), 1/ torch.pow(a* torch.mean(torch.norm(difference_ij_1 , dim = 1)), a ))
+            lossAux1 = torch.min(torch.maximum(10000-torch.pow(a* torch.mean(torch.norm(difference_ij_0 , dim = 1)), a ), torch.tensor(0.)),1/ torch.pow(a* torch.mean(torch.norm(difference_ij_0 , dim = 1)), a ))
+            lossAux2 = torch.min(torch.maximum(10000-torch.pow(a* torch.mean(torch.norm(difference_ij_1 , dim = 1)), a ), torch.tensor(0.)), 1/ torch.pow(a* torch.mean(torch.norm(difference_ij_1 , dim = 1)), a ))
+            loss = loss + lossAux2 + lossAux1
+    
+    loss = 2*loss /(n* (n-1)) 
+    return loss
+
+
+
+
+
+def linearDeflationLoss(modelOut:list[list[torch.Tensor]], maxLoss:float=10000, maxDistance:float = 0.1)->torch.Tensor:
+    """Linear deflation function. We compute basically sum _i,j max(maxLoss - maxLoss/ maxDistance * dist(u_i, u_j), 0  )
+
+    Args:
+        modelOut (list[list[torch.Tensor]]): Output of our model.
+        maxLoss (float, optional): Maximal possible loss. Defaults to 10000.
+        maxDistance (float, optional): After dist(u_i, u_j) gets to this value, the loss becomes 0 and we stop optimizing for deflation. Defaults to 0.1.
+
+    Returns:
+        torch.Tensor: _description_
+    """    
+    n = len(modelOut[0])
+    m = maxLoss/maxDistance
+    loss = torch.Tensor([0.]).to(modelOut[0][0].device)
+    if n == 1:
+        return loss
+    for i in range(n):
+        for j in range(n-1-i):
+            difference_ij_0 = modelOut[0][i] - modelOut[0][i + j+1]
+            difference_ij_1 = modelOut[1][i] - modelOut[1][i + j+1]
+            lossAux1 = torch.maximum(maxLoss - m* torch.mean(torch.norm(difference_ij_0 , dim = 1)), torch.tensor(0.))
+            lossAux2 = torch.maximum(maxLoss - m* torch.mean(torch.norm(difference_ij_1 , dim = 1)), torch.tensor(0.))
             loss = loss + lossAux2 + lossAux1
     
     loss = 2*loss /(n* (n-1)) 

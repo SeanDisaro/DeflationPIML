@@ -4,9 +4,9 @@ import deepxde as dde
 from src.architectures.DefDifONets.laplacian_2d import Laplacian_2D_DefDifONet
 from logging_config import setup_logging
 import logging
-from tests.Reduced2DimLDG.run import run
+from tests.Reduced2DimLDG_ApproxDerivativeWithNN.run import run
 
-#logger = setup_logging()
+logger = setup_logging()
 
 #logger = logging.getLogger(__name__)
 

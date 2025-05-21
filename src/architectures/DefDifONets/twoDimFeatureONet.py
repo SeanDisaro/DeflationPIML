@@ -3,6 +3,8 @@ import deepxde as dde
 from typing import Callable, Tuple
 import torch
 
+
+
 class Laplacian_2D_DefDifONet(nn.Module):
     """
     This model is a Deflation Diffusion DeepONet; The dimension of the out put
@@ -43,7 +45,7 @@ class Laplacian_2D_DefDifONet(nn.Module):
         self.trunkNet_Lin        =  (     
                                       [nn.Linear(2,trunk_width)]
                                     + [nn.Linear(trunk_width, trunk_width) for i in range(max(trunk_layer-1,0))]
-                                    + [nn.Linear(trunk_width, numBranchFeatures*10)]
+                                    + [nn.Linear(trunk_width, numBranchFeatures*2)]
                                     )
         
         # add the modules manually to ensure, that all parameters appear in model paramters
@@ -52,9 +54,9 @@ class Laplacian_2D_DefDifONet(nn.Module):
 
 
         self.branch_Lin_OtherSol =  (     
-                                      [nn.Linear(numBranchFeatures*10, branch_width, bias=False)]
+                                      [nn.Linear(numBranchFeatures*2, branch_width, bias=False)]
                                     + [nn.Linear(branch_width, branch_width, bias=False) for i in range( max(branch_layer-1,0) )]
-                                    + [nn.Linear(branch_width, numBranchFeatures*10, bias=False)]
+                                    + [nn.Linear(branch_width, numBranchFeatures*2, bias=False)]
                                     )
         
         # add the modules manually to ensure, that all parameters appear in model paramters
@@ -62,9 +64,9 @@ class Laplacian_2D_DefDifONet(nn.Module):
             self.add_module(f"branch_Lin_OtherSol_{idx}", module)
 
         self.branch_Lin          =  (     
-                                      [nn.Linear(numBranchFeatures*10, branch_width)]
+                                      [nn.Linear(numBranchFeatures*2, branch_width)]
                                     + [nn.Linear(branch_width, branch_width) for i in range( max(branch_layer-1,0) )]
-                                    + [nn.Linear(branch_width, numBranchFeatures*10)]
+                                    + [nn.Linear(branch_width, numBranchFeatures*2)]
                                     )
 
         # add the modules manually to ensure, that all parameters appear in model paramters
@@ -72,10 +74,9 @@ class Laplacian_2D_DefDifONet(nn.Module):
             self.add_module(f"branch_Lin_{idx}", module)
 
         
-        self.deepONet_biases     =    nn.ParameterList([nn.Parameter(torch.randn(1)) for i in range( 10 )])
+        self.deepONet_bias     =    nn.Parameter(torch.randn(2))
 
 
-        
     def totalBranch(self, listU: list[torch.Tensor])->list[torch.Tensor]:
         n = len(listU)
 
@@ -102,6 +103,7 @@ class Laplacian_2D_DefDifONet(nn.Module):
             otherSolContribution = sumOthersol - self.branch_Lin_OtherSol[-1](outList[j])
             outList[j] = otherSolContribution + self.branch_Lin[-1](outList[j])
         return outList
+    
 
     def trunk(self, x: torch.Tensor)->torch.Tensor:
         out = torch.zeros_like(x, device= x.device) + x
@@ -114,12 +116,13 @@ class Laplacian_2D_DefDifONet(nn.Module):
         out = self.trunkNet_Lin[-1](out)
 
         return out
+    
 
-    def evaluateFunc(self, branchFeatures: torch.Tensor ,x: torch.Tensor)->Tuple[torch.Tensor, torch.Tensor]:
+    def evaluateFunc(self, branchFeatures: torch.Tensor ,x: torch.Tensor)->dict[str, list[torch.Tensor]]:
         trunkOut = self.trunk(x)
         batchSize = trunkOut.shape[0]
         tiledBranchAux = torch.tile(branchFeatures, (batchSize,1))
-        totalOutProd = trunkOut[:,:2*self.numBranchFeatures]*tiledBranchAux[:,:2*self.numBranchFeatures]
+        totalOutProd = trunkOut*tiledBranchAux
         out1 = (torch.sum(totalOutProd[:,:self.numBranchFeatures], dim = 1) + self.deepONet_biases[0]).view(-1,1)
         out2 = (torch.sum(totalOutProd[:,self.numBranchFeatures:], dim = 1) + self.deepONet_biases[1]).view(-1,1)
         if self.DirichletHardConstraint:
@@ -129,16 +132,13 @@ class Laplacian_2D_DefDifONet(nn.Module):
                 out1 = out1 + self.DirichletConditionFunc1(x).view(-1,1)
             if self.DirichletConditionFunc2 != None:
                 out2 = out2 + self.DirichletConditionFunc2(x).view(-1,1)
-        return out1, out2
+                
+        dic = {"out1": out1, "out2": out2}
+            
+        return dic
+    
 
-
-    def forward(self, listU: list[torch.Tensor], x: torch.Tensor)->Tuple[list[torch.Tensor],list[torch.Tensor],
-                                                                         list[torch.Tensor],list[torch.Tensor],
-                                                                         list[torch.Tensor],list[torch.Tensor],
-                                                                         list[torch.Tensor],list[torch.Tensor],
-                                                                         list[torch.Tensor],list[torch.Tensor],list[torch.Tensor]]:
-        #xClone = x.clone()
-        #output TrunkNet
+    def forward(self, listU: list[torch.Tensor], x: torch.Tensor)->dict[str, list[torch.Tensor]]:
         trunkOut = self.trunk(x)
 
         #output BranchNet
@@ -150,7 +150,7 @@ class Laplacian_2D_DefDifONet(nn.Module):
         batchSize = trunkOut.shape[0]
         branchTiledFeatures = []
 
-        out1, out2, out1_dx, out2_dx, out1_dxx, out2_dxx, out1_dy, out2_dy, out1_dyy, out2_dyy = [],[],[],[],[],[],[],[],[],[]
+        out1, out2 = [],[]
 
         for i in range(n):
             tiledBranchAux = torch.tile(branchOut[i], (batchSize,1))
@@ -159,29 +159,7 @@ class Laplacian_2D_DefDifONet(nn.Module):
 
             out1.       append( ( torch.sum(totalOutAux[:,                         :   self.numBranchFeatures], dim = 1) + self.deepONet_biases[0]).view(-1,1) )
             out2.       append( ( torch.sum(totalOutAux[:,   self.numBranchFeatures: 2*self.numBranchFeatures], dim = 1) + self.deepONet_biases[1]).view(-1,1) )
-            out1_dx.    append( ( torch.sum(totalOutAux[:, 2*self.numBranchFeatures: 3*self.numBranchFeatures], dim = 1) + self.deepONet_biases[2]).view(-1,1)) 
-            out2_dx.    append( ( torch.sum(totalOutAux[:, 3*self.numBranchFeatures: 4*self.numBranchFeatures], dim = 1) + self.deepONet_biases[3]).view(-1,1) )
-            out1_dxx.   append( ( torch.sum(totalOutAux[:, 4*self.numBranchFeatures: 5*self.numBranchFeatures], dim = 1) + self.deepONet_biases[4]).view(-1,1) )
-            out2_dxx.   append( ( torch.sum(totalOutAux[:, 5*self.numBranchFeatures: 6*self.numBranchFeatures], dim = 1) + self.deepONet_biases[5]).view(-1,1) )
-            out1_dy.    append( ( torch.sum(totalOutAux[:, 6*self.numBranchFeatures: 7*self.numBranchFeatures], dim = 1) + self.deepONet_biases[6]).view(-1,1)) 
-            out2_dy.    append( ( torch.sum(totalOutAux[:, 7*self.numBranchFeatures: 8*self.numBranchFeatures], dim = 1) + self.deepONet_biases[7]).view(-1,1))
-            out1_dyy.   append( ( torch.sum(totalOutAux[:, 8*self.numBranchFeatures: 9*self.numBranchFeatures], dim = 1) + self.deepONet_biases[8]).view(-1,1) )
-            out2_dyy.   append( ( torch.sum(totalOutAux[:, 9*self.numBranchFeatures:                         ], dim = 1) + self.deepONet_biases[9]).view(-1,1) )
-        
-        # these are used for training, when the hardconstraint addition term has a very compicated derivative for autodifferentiation to grasp.
-        #out1_preHardConst = []
-        #out2_preHardConst = []
 
-        if self.DirichletHardConstraint:
-            for idxSol in range(n):
-                out1[idxSol] = out1[idxSol] * self.geom.boundary_constraint_factor(x, smoothness="Cinf")
-                out2[idxSol] = out2[idxSol] * self.geom.boundary_constraint_factor(x, smoothness="Cinf")
-                if self.DirichletConditionFunc1 != None:
-                    #out1_preHardConst.append(out1[idxSol].clone())
-                    out1[idxSol] = out1[idxSol] + self.DirichletConditionFunc1(x).view(-1,1)
-                if self.DirichletConditionFunc2 != None:
-                    #out2_preHardConst.append(out1[idxSol].clone())
-                    out2[idxSol] = out2[idxSol] + self.DirichletConditionFunc2(x).view(-1,1)
+            dic = {"out1": out1, "out2": out2}
 
-        return out1, out2, out1_dx, out2_dx, out1_dxx, out2_dxx, out1_dy, out2_dy, out1_dyy, out2_dyy, branchOut#, out1_preHardConst, out2_preHardConst
-
+            return dic

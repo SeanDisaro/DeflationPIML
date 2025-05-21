@@ -23,3 +23,8 @@ to do some basic set up.
 
 ## License
 This project is licensed under the GNU license. You may use it however you want!
+
+
+
+## Some Comments Regarding Progress:
+Experimented extentially with the src.DefDifONet.laplacian_2d.py architecture, but does not seem to work well. I'll try now a version where the derivative for the PDE is computed classically via auto diff.
