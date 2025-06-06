@@ -5,7 +5,7 @@ import torch
 
 
 
-class Laplacian_2D_DefDifONet(nn.Module):
+class two_dim_DefDifONet(nn.Module):
     """
     This model is a Deflation Diffusion DeepONet; The dimension of the out put
     is 2 and it outputs on top all the derivatives of the two outputs up to order 2 which we need for the laplacians of the components.
@@ -74,7 +74,7 @@ class Laplacian_2D_DefDifONet(nn.Module):
             self.add_module(f"branch_Lin_{idx}", module)
 
         
-        self.deepONet_bias     =    nn.Parameter(torch.randn(2))
+        self.deepONet_biases     =    nn.Parameter(torch.randn(2))
 
 
     def totalBranch(self, listU: list[torch.Tensor])->list[torch.Tensor]:
@@ -144,6 +144,7 @@ class Laplacian_2D_DefDifONet(nn.Module):
         #output BranchNet
         n = len(listU)
         branchOut = self.totalBranch(listU)
+
         if self.normalizationBranch:
             for i in range(n):
                 branchOut[i] = self.normalizationFactor * torch.nn.functional.softsign(branchOut[i])
@@ -160,6 +161,21 @@ class Laplacian_2D_DefDifONet(nn.Module):
             out1.       append( ( torch.sum(totalOutAux[:,                         :   self.numBranchFeatures], dim = 1) + self.deepONet_biases[0]).view(-1,1) )
             out2.       append( ( torch.sum(totalOutAux[:,   self.numBranchFeatures: 2*self.numBranchFeatures], dim = 1) + self.deepONet_biases[1]).view(-1,1) )
 
-            dic = {"out1": out1, "out2": out2}
 
-            return dic
+        if self.DirichletHardConstraint:
+            for idxSol in range(n):
+                out1[idxSol] = out1[idxSol] * self.geom.boundary_constraint_factor(x, smoothness="Cinf")*20
+                out2[idxSol] = out2[idxSol] * self.geom.boundary_constraint_factor(x, smoothness="Cinf")*20
+                if self.DirichletConditionFunc1 != None:
+                    #out1_preHardConst.append(out1[idxSol].clone())
+                    boundaryExtension1 = self.DirichletConditionFunc1(x).view(-1,1)
+                    # scaling = max()
+                    out1[idxSol] = out1[idxSol] + boundaryExtension1
+                if self.DirichletConditionFunc2 != None:
+                    #out2_preHardConst.append(out1[idxSol].clone())
+                    boundaryExtension2 = self.DirichletConditionFunc2(x).view(-1,1)
+                    out2[idxSol] = out2[idxSol] +boundaryExtension2
+
+        dic = {"out1": out1, "out2": out2, "features": branchOut}
+
+        return dic

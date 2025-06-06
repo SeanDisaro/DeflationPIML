@@ -1,10 +1,7 @@
-import numpy as np
-import torch
-import deepxde as dde
-from src.architectures.DefDifONets.laplacian_2d import Laplacian_2D_DefDifONet
 from logging_config import setup_logging
-import logging
-from tests.Reduced2DimLDG_ApproxDerivativeWithNN.run import run
+#from tests.Reduced2DimLDG_ApproxDerivativeWithNN.run import run
+#from tests.Reduced2DimLDG_AutoGradDerivative.run import run
+from tests.Reduced2DimLDG_FixedBranchFeatures.run import run
 
 logger = setup_logging()
 

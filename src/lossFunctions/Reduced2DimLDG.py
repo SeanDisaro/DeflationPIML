@@ -8,7 +8,69 @@ geomBoundaryExtension = dde.geometry.geometry_2d.Rectangle([0.,0.], [1.,1.])
 
 logger = logger = logging.getLogger("logging_config")
 
+def pimlLoss_w_AutoGrad(modelOut:dict[list[torch.Tensor]],x, boundaryPoints:torch.Tensor = None, modelOutBoundary:dict[list[torch.Tensor]] = None ,
+                eps:float = 0.02, alpha:float = 1., beta:float = 0.1):
+    lossPDE = torch.tensor(0.)
+    out1 = modelOut["out1"]
+    out2 = modelOut["out2"]
+    batchSize = x.shape[0]
+    for i in range(len(out1)):
+        out1_AD = torch.autograd.grad(out1[i].view(-1,1), x,
+                                     torch.ones((batchSize, 1), requires_grad = True).to("cuda"),
+                                       allow_unused=True, create_graph=True)[0]
+        
+        out2_AD = torch.autograd.grad(out2[i].view(-1,1), x,
+                                     torch.ones((batchSize, 1), requires_grad = True).to("cuda"),
+                                       allow_unused=True, create_graph=True)[0]
+        
+        out1_AD_dxx = torch.autograd.grad(out1_AD[:, 0].view(-1,1), x,
+                                     torch.ones((batchSize, 1), requires_grad = True).to("cuda"),
+                                       allow_unused=True, create_graph=True)[0][:,0]
+        
+        out1_AD2_dyy = torch.autograd.grad(out1_AD[:, 1].view(-1,1), x,
+                                     torch.ones((batchSize, 1), requires_grad = True).to("cuda"),
+                                       allow_unused=True, create_graph=True)[0][:,1]
+        
+        out2_AD_dxx = torch.autograd.grad(out2_AD[:, 0].view(-1,1), x,
+                                     torch.ones((batchSize, 1), requires_grad = True).to("cuda"),
+                                       allow_unused=True, create_graph=True)[0][:,0]
+        
+        out2_AD2_dyy = torch.autograd.grad(out2_AD[:, 1].view(-1,1), x,
+                                     torch.ones((batchSize, 1), requires_grad = True).to("cuda"),
+                                       allow_unused=True, create_graph=True)[0][:,1]
 
+
+        laplace_comp1 = out1_AD_dxx + out1_AD2_dyy
+        laplace_comp2 = out2_AD_dxx + out2_AD2_dyy
+        Q_squaredNorm = out1[i] **2 + out2[i] **2
+        lossPDE_comp1 = (2*   (1 - Q_squaredNorm) *out1[i]    + (eps **2)*laplace_comp1)
+        lossPDE_comp2 = (2*   (1 - Q_squaredNorm) *out2[i]    + (eps **2)*laplace_comp2)
+        lossPDE = lossPDE +  torch.mean(torch.norm(lossPDE_comp1, dim = 1)) + torch.mean(torch.norm(lossPDE_comp2, dim = 1))
+
+    if boundaryPoints != None and modelOutBoundary != None:
+        out1B = modelOutBoundary["out1"]
+        out2B = modelOutBoundary["out2"]
+        outTrue1 = boundaryFunctionExtension(boundaryPoints, 3*eps)
+        outTrue2 = torch.zeros((boundaryPoints.shape[0], 1))
+        boundaryLoss = torch.tensor(0.)
+        for i in range(len(out1B)):
+            boundaryLoss = boundaryLoss +  torch.mean(torch.norm(out1B[i] - outTrue1 , dim = 1)) + torch.mean(torch.norm(out2B[i] - outTrue2, dim = 1))
+        return  alpha* lossPDE + beta * boundaryLoss
+    else:
+        return alpha* lossPDE
+
+
+
+def defDifONetLossPIML_w_AD( x: torch.Tensor, modelOut:list[list[torch.Tensor]], boundaryPoints:torch.Tensor = None,modelOutBoundary:list[list[torch.Tensor]] = None ,
+                    eps:float = 0.02, deflationLossPoints: tuple[float,float] = (10000.,1.) ,deflationLossCoeff:float = 1., alpha:float = 1., beta:float = 0.1, delta: float = 1.) -> torch.Tensor:
+
+    loss_PDEAndBoundary = pimlLoss_w_AutoGrad(  modelOut = modelOut,x=x, boundaryPoints = boundaryPoints, modelOutBoundary = modelOutBoundary ,
+                                    eps = eps, alpha = alpha, beta = beta)
+
+    deflationLossOut = linearDeflationLoss_dictModel(modelOut = modelOut, maxLoss = deflationLossPoints[0], maxDistance = deflationLossPoints[1]) #deflationLoss(modelOut=modelOut, a = deflationLossCoeff)
+    logger.info("--------------------------------------------------------------------------------------------------------------------------------")
+    logger.info(f"PDE Loss: {loss_PDEAndBoundary.item():.2f}--------Deflation Loss: {delta*deflationLossOut.item():.2f}")
+    return loss_PDEAndBoundary + delta*deflationLossOut
 
 def pimlLoss(modelOut:list[list[torch.Tensor]],x, boundaryPoints:torch.Tensor = None, modelOutBoundary:list[list[torch.Tensor]] = None ,
                 eps:float = 0.02, alpha:float = 1., beta:float = 0.1)->torch.Tensor:
@@ -44,16 +106,19 @@ def pimlLoss(modelOut:list[list[torch.Tensor]],x, boundaryPoints:torch.Tensor = 
                 angles='xy', scale_units='xy', scale=20, width=0.0015*10/33
                 )
             plt.show()
-            
-    # TODO fix the boundary loss part, i.e. make it work for the output list
 
     if boundaryPoints != None and modelOutBoundary != None:
-        boundaryLoss = (    torch.mean(torch.norm( torch.concatenate(modelOutBoundary[0]) - boundaryFunctionExtension(boundaryPoints, 3*eps), dim = 1))
-                            + torch.mean(torch.norm( torch.concatenate(modelOutBoundary[1]) , dim = 1)))
-        return alpha* lossPDE + beta  * boundaryLoss
+        out1B = modelOutBoundary[0]
+        out2B = modelOutBoundary[1]
+        outTrue1 = boundaryFunctionExtension(boundaryPoints, 3*eps)
+        outTrue2 = torch.zeros((boundaryPoints.shape[0], 1))
+        boundaryLoss = torch.tensor(0.)
+        for i in range(len(out1B)):
+            boundaryLoss = boundaryLoss +  torch.mean(torch.norm(out1B[i] - outTrue1 , dim = 1)) + torch.mean(torch.norm(out2B[i] - outTrue2, dim = 1))
+        return  alpha* lossPDE + beta * boundaryLoss
     else:
-        return alpha*lossPDE
-    
+        return alpha* lossPDE
+ 
 
 
 def defDifONetLossPIML( x: torch.Tensor, modelOut:list[list[torch.Tensor]], boundaryPoints:torch.Tensor = None,modelOutBoundary:list[list[torch.Tensor]] = None ,
@@ -149,7 +214,10 @@ def boundaryFunctionExtension(x: torch.Tensor, d:float)->torch.Tensor:
     maskZeroDenominatorNegation = maskZeroDenominator == False
     out = trapezoidalFun(x1, d)* (x1* (1-x1)) / ((x1* (1-x1)) + (x2* (1-x2)) + maskZeroDenominator) - trapezoidalFun(x2, d)* (x2* (1-x2)) / ((x1* (1-x1)) + (x2* (1-x2)) + maskZeroDenominator)
     out = out * maskZeroDenominatorNegation
-    out = trapezoidalFun(x1, d).view(-1,1)* ((x2)**2 ).view(-1,1)   -   trapezoidalFun(x2, d).view(-1,1)* ((2*x1-1)**2 ).view(-1,1)
+    # phi1 = (x1 **2 *(1- x1)**2).view(-1,1)   
+    # phi2 = (x2 **2 *(1- x2)**2).view(-1,1)
+    # alpha = phi1 / (phi1 + phi2)
+    out = trapezoidalFun(x1, d).view(-1,1)   -  trapezoidalFun(x2, d).view(-1,1)
     return out
 
 
@@ -229,4 +297,34 @@ def linearDeflationLoss(modelOut:list[list[torch.Tensor]], maxLoss:float=10000, 
             loss = loss + lossAux2 + lossAux1
     
     loss = 2*loss /(n* (n-1)) 
+    return loss
+
+
+def linearDeflationLoss_dictModel(modelOut:dict[list[torch.Tensor]], maxLoss:float=10000, maxDistance:float = 0.1)->torch.Tensor:
+    """Linear deflation function. We compute basically sum _i,j max(maxLoss - maxLoss/ maxDistance * dist(u_i, u_j), 0  )
+
+    Args:
+        modelOut (list[list[torch.Tensor]]): Output of our model.
+        maxLoss (float, optional): Maximal possible loss. Defaults to 10000.
+        maxDistance (float, optional): After dist(u_i, u_j) gets to this value, the loss becomes 0 and we stop optimizing for deflation. Defaults to 0.1.
+
+    Returns:
+        torch.Tensor: _description_
+    """
+    #out1 = modelOut["out1"]
+    out2 = modelOut["out2"]
+    n = len(out2)
+    m = maxLoss/maxDistance
+    loss = torch.Tensor([0.]).to(out2[0].device)
+    if n == 1:
+        return loss
+    for i in range(n):
+        for j in range(n-1-i):
+            # difference_ij_0 = out1[i] - out1[i + j+1]
+            difference_ij_1 = out2[i] - out2[i + j+1]
+            #lossAux1 = torch.maximum(maxLoss - m* torch.mean(torch.norm(difference_ij_0 , dim = 1)), torch.tensor(0.))
+            lossAux2 = torch.maximum((maxLoss - m* torch.mean(torch.norm(difference_ij_1 , dim = 1))) , torch.tensor(0.))
+            loss = loss + lossAux2 #+ lossAux1
+    
+    loss = 2*loss /(n* (n-1))
     return loss
