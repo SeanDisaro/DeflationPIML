@@ -12,11 +12,11 @@ from config import *
 import dill as pickle
 
 logger = logging.getLogger("logging_config")
-
+pathSavePictures = PurePath(plotFolder, "Reduced2DimLDG_FixedBranchFeatures")
 
 def train(  model: two_dim_DefDifONet, x: torch.Tensor, epochs: int, boundaryPoints: torch.Tensor = None,
             learningRate:float  = 1e-4,loadBestModel:bool = False, verbose:bool = True, showTrainingPlot:bool = True, modelName: str= "Two_Dim_DefDifONet",
-            alpha:float = 1., beta:float = 0.1, delta:float = 1, deflationLossPoints: tuple[float,float] = (10000.,1.) , deflationCoefficient:float = 1., FrequencyReportLosses:int = 50)->Tuple[two_dim_DefDifONet, list[torch.Tensor]]:
+            alpha:float = 1., beta:float = 0.1, delta:float = 1, deflationLossPoints: tuple[float,float] = (10000.,1.) , deflationCoefficient:float = 1., FrequencyReportLosses:int = 50, learningRateEpochPlotName:str = "Learning_Epoch_Plot")->Tuple[two_dim_DefDifONet, list[torch.Tensor]]:
     """This is the training funciton for the DifDefONet model for the reduced 2dim LDG model. It returns the trained model and the feature list containing the solution functions, which can be used with the trained model.
 
     Args:
@@ -39,6 +39,7 @@ def train(  model: two_dim_DefDifONet, x: torch.Tensor, epochs: int, boundaryPoi
         deflationLossPoints (tuple[float,float], optional): Points adjusting the linear deflation loss function. This contains (maxLoss, maxDistance). Defaults to (10000.,1.).
         deflationCoefficient (float, optional): Coefficient to adjust deflation loss. Defaults to 1..
         FrequencyReportLosses (int, optional): _description_. Defaults to 50.
+        learningRateEpochPlotName (str, optional) = Name under which we want to save the learning plot. Defaults to "Learning_Epoch_Plot".
 
     Returns:
         Tuple[Laplacian_2D_DefDifONet, list[torch.Tensor]]: Returns trained model and feature representation of the solution funcitons.
@@ -68,9 +69,17 @@ def train(  model: two_dim_DefDifONet, x: torch.Tensor, epochs: int, boundaryPoi
         ax.set_ylabel("Loss")
         line, = ax.plot(xValueForPlot[:len(lossesForPlot)], lossesForPlot)
 
+    #compute loss
+    modelOut = model(x)
+    modelOutBoundary = None
+    if useBoundaryLossTerm:
+        modelOutBoundary = model(boundaryPoints)
+    loss = defDifONetLossPIML_w_AD(  x = x, modelOut = modelOut, boundaryPoints = boundaryPoints, modelOutBoundary = modelOutBoundary,
+                                    eps = 0.02,deflationLossPoints = deflationLossPoints, deflationLossCoeff=deflationCoefficient, alpha = alpha, beta = beta, delta = delta)
+
+    logger.warning(f"First Loss {loss.item()}")
     for epoch in tqdm(range(epochs)):
-        if epoch == 1000:
-            pass
+
         optimizer.zero_grad()
         
 
@@ -118,6 +127,9 @@ def train(  model: two_dim_DefDifONet, x: torch.Tensor, epochs: int, boundaryPoi
 
         epoch += 1
 
+    # save learning rate/ epoch plot
+    fig.savefig(PurePath(pathSavePictures, learningRateEpochPlotName + ".png"))
+
     if loadBestModel:
         #load best model; pathTrainedModels is defined in config
         #model = torch.load(PurePath(pathTrainedModels, modelName +".pt")).to("cuda")
@@ -130,5 +142,13 @@ def train(  model: two_dim_DefDifONet, x: torch.Tensor, epochs: int, boundaryPoi
         with open(PurePath(pathTrainedModels, modelName +".pkl"), "wb") as f:
             pickle.dump(model, f)
 
-            
+    modelOut = model(x)
+    modelOutBoundary = None
+    if useBoundaryLossTerm:
+        modelOutBoundary = model(boundaryPoints)
+    loss = defDifONetLossPIML_w_AD(  x = x, modelOut = modelOut, boundaryPoints = boundaryPoints, modelOutBoundary = modelOutBoundary,
+                                    eps = 0.02,deflationLossPoints = deflationLossPoints, deflationLossCoeff=deflationCoefficient, alpha = alpha, beta = beta, delta = delta)
+
+    logger.warning(f"Last Loss {loss.item()}")
+
     return model

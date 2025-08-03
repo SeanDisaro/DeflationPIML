@@ -34,7 +34,7 @@ def plot_Q11_Q12(model, grid_N, showPlot = False, saveName:str = "Reduced2DimLDG
                 X, Y,                             # arrow tails
                 U[i].detach().cpu().numpy(),
                 V[i].detach().cpu().numpy(),      # arrow directions
-                angles='xy', scale_units='xy', scale=20, width=0.0015*10/grid_N
+                angles='xy', scale_units='xy', scale=20, width=0.0015
                 )
         
 
@@ -45,7 +45,7 @@ def plot_Q11_Q12(model, grid_N, showPlot = False, saveName:str = "Reduced2DimLDG
                 X, Y,                             # arrow tails
                 U[i].detach().cpu().numpy(),
                 V[i].detach().cpu().numpy(),      # arrow directions
-                angles='xy', scale_units='xy', scale=20, width=0.0015*10/grid_N
+                angles='xy', scale_units='xy', scale=20, width=0.0015
                 )
         
     fig.savefig(path)
@@ -93,7 +93,7 @@ def plot_nematic_director(model, grid_N, showPlot = False, saveName:str = "Reduc
                 X, Y,                             # arrow tails
                 nematic_director[i][:, 0].detach().cpu().numpy(),
                 nematic_director[i][:, 1].detach().cpu().numpy(),      # arrow directions
-                angles='xy', scale_units='xy', scale=20, width=0.0015*10/grid_N
+                angles='xy', scale_units='xy', scale=20, width=0.0015
                 )
         
 
@@ -104,7 +104,7 @@ def plot_nematic_director(model, grid_N, showPlot = False, saveName:str = "Reduc
                 X, Y,                             # arrow tails
                 nematic_director[i][:, 0].detach().cpu().numpy(),
                 nematic_director[i][:, 1].detach().cpu().numpy(),      # arrow directions
-                angles='xy', scale_units='xy', scale=20, width=0.0015*10/grid_N
+                angles='xy', scale_units='xy', scale=20, width=0.0015
                 )
         
     fig.savefig(path)
@@ -178,7 +178,7 @@ def plot_piml_Error(model, grid_N, showPlot = False, saveName:str = "Reduced2Dim
                 X, Y,                             # arrow tails
                 piml_errors[i][:, 0].detach().cpu().numpy(),
                 piml_errors[i][:, 1].detach().cpu().numpy(),      # arrow directions
-                angles='xy', scale_units='xy', scale=20, width=0.0015*10/grid_N
+                angles='xy', scale_units='xy', scale=20, width=0.0015
                 )
         
 
@@ -189,10 +189,13 @@ def plot_piml_Error(model, grid_N, showPlot = False, saveName:str = "Reduced2Dim
                 X, Y,                             # arrow tails
                 piml_errors[i][:, 0].detach().cpu().numpy(),
                 piml_errors[i][:, 1].detach().cpu().numpy(),      # arrow directions
-                angles='xy', scale_units='xy', scale=20, width=0.0015*10/grid_N
+                angles='xy', scale_units='xy', scale=20, width=0.0015
                 )
         
     fig.savefig(path)
     if showPlot:
         fig.show()
     plt.close()
+
+
+

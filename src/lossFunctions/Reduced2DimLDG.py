@@ -43,9 +43,9 @@ def pimlLoss_w_AutoGrad(modelOut:dict[list[torch.Tensor]],x, boundaryPoints:torc
         laplace_comp1 = out1_AD_dxx + out1_AD2_dyy
         laplace_comp2 = out2_AD_dxx + out2_AD2_dyy
         Q_squaredNorm = out1[i] **2 + out2[i] **2
-        lossPDE_comp1 = (2*   (1 - Q_squaredNorm) *out1[i]    + (eps **2)*laplace_comp1)
-        lossPDE_comp2 = (2*   (1 - Q_squaredNorm) *out2[i]    + (eps **2)*laplace_comp2)
-        lossPDE = lossPDE +  torch.mean(torch.norm(lossPDE_comp1, dim = 1)) + torch.mean(torch.norm(lossPDE_comp2, dim = 1))
+        lossPDE_comp1 = ((2*   (1 - Q_squaredNorm) *out1[i]).view(-1)    + (eps **2)*laplace_comp1)
+        lossPDE_comp2 = ((2*   (1 - Q_squaredNorm) *out2[i]).view(-1)    + (eps **2)*laplace_comp2)
+        lossPDE = lossPDE +  torch.nanmean(torch.abs(lossPDE_comp1)) + torch.nanmean(torch.abs(lossPDE_comp2 ))
 
     if boundaryPoints != None and modelOutBoundary != None:
         out1B = modelOutBoundary["out1"]
@@ -54,7 +54,7 @@ def pimlLoss_w_AutoGrad(modelOut:dict[list[torch.Tensor]],x, boundaryPoints:torc
         outTrue2 = torch.zeros((boundaryPoints.shape[0], 1))
         boundaryLoss = torch.tensor(0.)
         for i in range(len(out1B)):
-            boundaryLoss = boundaryLoss +  torch.mean(torch.norm(out1B[i] - outTrue1 , dim = 1)) + torch.mean(torch.norm(out2B[i] - outTrue2, dim = 1))
+            boundaryLoss = boundaryLoss +  torch.nanmean(torch.norm(out1B[i] - outTrue1 , dim = 1)) + torch.nanmean(torch.norm(out2B[i] - outTrue2, dim = 1))
         return  alpha* lossPDE + beta * boundaryLoss
     else:
         return alpha* lossPDE
@@ -95,7 +95,7 @@ def pimlLoss(modelOut:list[list[torch.Tensor]],x, boundaryPoints:torch.Tensor = 
         Q_squaredNorm = modelOut[0][i] **2 + modelOut[1][i] **2
         lossPDE_comp1 = 200*   (1 - Q_squaredNorm) *modelOut[0][i]    + ((10*eps) **2)*laplace_comp1
         lossPDE_comp2 = 200*   (1 - Q_squaredNorm) *modelOut[1][i]    + ((10*eps) **2)*laplace_comp2
-        lossPDE = lossPDE +  torch.mean(torch.norm(lossPDE_comp1, dim = 1)) + torch.mean(torch.norm(lossPDE_comp2, dim = 1)) 
+        lossPDE = lossPDE +  torch.nanmean(torch.norm(lossPDE_comp1, dim = 1)) + torch.nanmean(torch.norm(lossPDE_comp2, dim = 1)) 
         
         if dummy:
             plt.clf()
@@ -114,7 +114,7 @@ def pimlLoss(modelOut:list[list[torch.Tensor]],x, boundaryPoints:torch.Tensor = 
         outTrue2 = torch.zeros((boundaryPoints.shape[0], 1))
         boundaryLoss = torch.tensor(0.)
         for i in range(len(out1B)):
-            boundaryLoss = boundaryLoss +  torch.mean(torch.norm(out1B[i] - outTrue1 , dim = 1)) + torch.mean(torch.norm(out2B[i] - outTrue2, dim = 1))
+            boundaryLoss = boundaryLoss +  torch.nanmean(torch.norm(out1B[i] - outTrue1 , dim = 1)) + torch.nanmean(torch.norm(out2B[i] - outTrue2, dim = 1))
         return  alpha* lossPDE + beta * boundaryLoss
     else:
         return alpha* lossPDE
@@ -261,8 +261,8 @@ def deflationLoss(modelOut:list[list[torch.Tensor]], a:float=1)->torch.Tensor:
         for j in range(n-1-i):
             difference_ij_0 = modelOut[0][i] - modelOut[0][i + j+1]
             difference_ij_1 = modelOut[1][i] - modelOut[1][i + j+1]
-            lossAux1 = torch.min(torch.maximum(10000-torch.pow(a* torch.mean(torch.norm(difference_ij_0 , dim = 1)), a ), torch.tensor(0.)),1/ torch.pow(a* torch.mean(torch.norm(difference_ij_0 , dim = 1)), a ))
-            lossAux2 = torch.min(torch.maximum(10000-torch.pow(a* torch.mean(torch.norm(difference_ij_1 , dim = 1)), a ), torch.tensor(0.)), 1/ torch.pow(a* torch.mean(torch.norm(difference_ij_1 , dim = 1)), a ))
+            lossAux1 = torch.min(torch.maximum(10000-torch.pow(a* torch.nanmean(torch.norm(difference_ij_0 , dim = 1)), a ), torch.tensor(0.)),1/ torch.pow(a* torch.nanmean(torch.norm(difference_ij_0 , dim = 1)), a ))
+            lossAux2 = torch.min(torch.maximum(10000-torch.pow(a* torch.nanmean(torch.norm(difference_ij_1 , dim = 1)), a ), torch.tensor(0.)), 1/ torch.pow(a* torch.nanmean(torch.norm(difference_ij_1 , dim = 1)), a ))
             loss = loss + lossAux2 + lossAux1
     
     loss = 2*loss /(n* (n-1)) 
@@ -292,8 +292,8 @@ def linearDeflationLoss(modelOut:list[list[torch.Tensor]], maxLoss:float=10000, 
         for j in range(n-1-i):
             difference_ij_0 = modelOut[0][i] - modelOut[0][i + j+1]
             difference_ij_1 = modelOut[1][i] - modelOut[1][i + j+1]
-            lossAux1 = torch.maximum(maxLoss - m* torch.mean(torch.norm(difference_ij_0 , dim = 1)), torch.tensor(0.))
-            lossAux2 = torch.maximum(maxLoss - m* torch.mean(torch.norm(difference_ij_1 , dim = 1)), torch.tensor(0.))
+            lossAux1 = torch.maximum(maxLoss - m* torch.nanmean(torch.norm(difference_ij_0 , dim = 1)), torch.tensor(0.))
+            lossAux2 = torch.maximum(maxLoss - m* torch.nanmean(torch.norm(difference_ij_1 , dim = 1)), torch.tensor(0.))
             loss = loss + lossAux2 + lossAux1
     
     loss = 2*loss /(n* (n-1)) 
@@ -320,10 +320,10 @@ def linearDeflationLoss_dictModel(modelOut:dict[list[torch.Tensor]], maxLoss:flo
         return loss
     for i in range(n):
         for j in range(n-1-i):
-            # difference_ij_0 = out1[i] - out1[i + j+1]
+            #difference_ij_0 = out1[i] - out1[i + j+1]
             difference_ij_1 = out2[i] - out2[i + j+1]
             #lossAux1 = torch.maximum(maxLoss - m* torch.mean(torch.norm(difference_ij_0 , dim = 1)), torch.tensor(0.))
-            lossAux2 = torch.maximum((maxLoss - m* torch.mean(torch.norm(difference_ij_1 , dim = 1))) , torch.tensor(0.))
+            lossAux2 = torch.maximum((maxLoss - m* torch.nanmean(torch.norm(difference_ij_1 , dim = 1))) , torch.tensor(0.))
             loss = loss + lossAux2 #+ lossAux1
     
     loss = 2*loss /(n* (n-1))
