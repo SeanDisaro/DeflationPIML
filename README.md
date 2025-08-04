@@ -49,14 +49,17 @@ ________________________________________________________
  ┃ ┣ 📜Reduced2DimLDG.py
  ┣ 📜differentialOperators.py
  ```
- 
+
 ________________________________________________________
 
 
 `starDomainExtrapolation` contains tools for the star domain function extrapolation described in the paper for implementing the mentioned Dirichlet hard constraint.
 
+```
 📦starDomainExtrapolation
  ┗📜starDomain.py
+```
+
 ________________________________________________________
 
 `tests` contains various experiments to test out different architectures. Each test gets its own directory and has a `run.py`, `testing.py` and a `training.py`. `run.py` provides a function, which gets called by the `main.py` file to run the respective experiment. `testing.py` implements various testing functions which get called in `run.py`. This includes for the most part some plotting functions. `training.py` defines the training loop of the experiment. The experiment from the paper can be found in `Reduced2DimLDG_FixedBranchFeatures`. The other experiments did not work well at some point and were abandoned.
