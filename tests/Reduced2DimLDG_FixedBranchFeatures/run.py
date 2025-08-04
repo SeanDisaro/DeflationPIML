@@ -9,6 +9,31 @@ from starDomainExtrapolation.starDomain import *
 
 
 
+#####################################################################################################################
+#These are some functions used for the boundary hard constraint
+def boundaryConditionSpherical(starDomain, angles, boundaryFunction):
+    return boundaryFunction(starDomain.getCartesianCoordinates( starDomain.radiusDomainFunciton(angles) ,angles))
+  
+def zeroOnBoundaryExtension(starDomain, input):
+    radius, angles = starDomain.getSphericalCoordinates(input)
+    return squaredRadial( radius / starDomain.radiusDomainFunciton(angles)).view(-1,1)
+  
+def DCBoundaryExtension(starDomain,input, boundaryFunction):
+    radius, angles = starDomain.getSphericalCoordinates(input)
+    return boundaryConditionSpherical(starDomain, angles, boundaryFunction) *  (1- linearRadial( radius / starDomain.radiusDomainFunciton(angles))).view(-1,1) 
+
+
+def squaredRadial(x):
+    return (1 - x*x).view(-1,1)
+
+def linearRadial(x):
+    return (1 - x).view(-1,1)
+
+def bfunc(x):
+    return boundaryFunctionExtension(torch.cat((x[0],x[1]), dim=1), d= 0.06)
+########################################################################################################################
+
+
 def run():
     geom = dde.geometry.geometry_2d.Rectangle([0.,0.], [1.,1.])
     eps = 0.02
@@ -58,20 +83,20 @@ def run():
     # boundaryPoints = boundaryPoints.to("cuda")
     points.requires_grad = True
     numSolutions = 6
-    learningRate = 1e-2 # 1e-3
+    learningRate = 1e-3 # 1e-3
     # decreaseLearningRateEpoch = learningRate/2
-    alpha = 2.
+    alpha = 15. # 2.
     beta = 1.
-    delta = 2.6 # 2.6
+    delta = 1. # 2.6
     deflationCoefficient = 1.
     epochs= 25000
     deflationLossPoints = (500.,0.4) 
     
     model = two_dim_DefDifONet(
                     numSolutions = numSolutions,
-                    numBranchFeatures = 6, 
+                    numBranchFeatures = 7, #6 
                     trunk_layer = 1,
-                    trunk_width = 2200, 
+                    trunk_width = 2500, #2200
                     activationFunction = torch.nn.Tanh(),
                     geom = geom,
                     DirichletHardConstraint = True,
@@ -115,24 +140,3 @@ def run():
 
     return 0
 
-
-def boundaryConditionSpherical(starDomain, angles, boundaryFunction):
-    return boundaryFunction(starDomain.getCartesianCoordinates( starDomain.radiusDomainFunciton(angles) ,angles))
-  
-def zeroOnBoundaryExtension(starDomain, input):
-    radius, angles = starDomain.getSphericalCoordinates(input)
-    return squaredRadial( radius / starDomain.radiusDomainFunciton(angles)).view(-1,1)
-  
-def DCBoundaryExtension(starDomain,input, boundaryFunction):
-    radius, angles = starDomain.getSphericalCoordinates(input)
-    return boundaryConditionSpherical(starDomain, angles, boundaryFunction) *  (1- linearRadial( radius / starDomain.radiusDomainFunciton(angles))).view(-1,1) 
-
-
-def squaredRadial(x):
-    return (1 - x*x).view(-1,1)
-
-def linearRadial(x):
-    return (1 - x).view(-1,1)
-
-def bfunc(x):
-    return boundaryFunctionExtension(torch.cat((x[0],x[1]), dim=1), d= 0.06)
