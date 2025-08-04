@@ -56,25 +56,25 @@ ________________________________________________________
 
 `tests` contains various experiments to test out different architectures. Each test gets its own directory and has a `run.py`, `testing.py` and a `training.py`. `run.py` provides a function, which gets called by the `main.py` file to run the respective experiment. `testing.py` implements various testing functions which get called in `run.py`. This includes for the most part some plotting functions. `training.py` defines the training loop of the experiment. The experiment from the paper can be found in `Reduced2DimLDG_FixedBranchFeatures`. The other experiments did not work well at some point and were abandoned.
 
-
-📦tests
- ┣ 📂pictures
- ┃ ┣ 📂Reduced2DimLDG_ApproxDerivativeWithNN
- ┃ ┣ 📂Reduced2DimLDG_AutoGradDerivative
- ┃ ┗ 📂Reduced2DimLDG_FixedBranchFeatures
- ┣ 📂Reduced2DimLDG_ApproxDerivativeWithNN
- ┃ ┣ 📜run.py
- ┃ ┣ 📜testing.py
- ┃ ┣ 📜training.py
- ┣ 📂Reduced2DimLDG_AutoGradDerivative
- ┃ ┣ 📜run.py
- ┃ ┣ 📜testing.py
- ┃ ┗ 📜training.py
- ┣ 📂Reduced2DimLDG_FixedBranchFeatures
- ┃ ┣ 📜run.py
- ┃ ┣ 📜testing.py
- ┃ ┗ 📜training.py
-
+```
+        📦tests
+        ┣ 📂pictures
+        ┃ ┣ 📂Reduced2DimLDG_ApproxDerivativeWithNN
+        ┃ ┣ 📂Reduced2DimLDG_AutoGradDerivative
+        ┃ ┗ 📂Reduced2DimLDG_FixedBranchFeatures
+        ┣ 📂Reduced2DimLDG_ApproxDerivativeWithNN
+        ┃ ┣ 📜run.py
+        ┃ ┣ 📜testing.py
+        ┃ ┣ 📜training.py
+        ┣ 📂Reduced2DimLDG_AutoGradDerivative
+        ┃ ┣ 📜run.py
+        ┃ ┣ 📜testing.py
+        ┃ ┗ 📜training.py
+        ┣ 📂Reduced2DimLDG_FixedBranchFeatures
+        ┃ ┣ 📜run.py
+        ┃ ┣ 📜testing.py
+        ┃ ┗ 📜training.py
+```
 
 
 
