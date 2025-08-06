@@ -1,5 +1,5 @@
 # DeflationPIML
-This repository is to test PDE deflation methods with neural networks.
+This repository is to test PDE deflation methods with neural networks for a forthcoming paper. If you want to read the current draft, then please contact me on seandisaro@gmail.com
 
 ## Installation
 Use python 3.12.
@@ -15,7 +15,7 @@ to install the necessary packages. Afterwards run
 to do some basic set up.
 
 ## Structure of the repo
-The experiment described in the paper runs, if you run `python main.py` with the environment described above.
+The experiment described in the paper runs, if you run `python main.py` with the environment described above. You can find how the pictures and metrics from the paper were computed in `metricsAndPics4Paper.ipynb`!
 
 _____________________________________________________
 Contains solutions for the LDG problem from the paper which were generated with FEM. You can just try them out in a notebook. The coordinates needed for the points are saved in `data_test.mat`
@@ -90,8 +90,7 @@ ________________________________________________________
 ## Cite the paper
 [Not Uploaded Yet]
 
-## Link to Repo where Finite Element Solutions were generated
-[Insert Link]
+
 
 ## Team
 
