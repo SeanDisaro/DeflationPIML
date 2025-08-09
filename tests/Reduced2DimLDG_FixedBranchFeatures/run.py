@@ -20,7 +20,7 @@ def zeroOnBoundaryExtension(starDomain, input):
   
 def DCBoundaryExtension(starDomain,input, boundaryFunction):
     radius, angles = starDomain.getSphericalCoordinates(input)
-    return boundaryConditionSpherical(starDomain, angles, boundaryFunction) *  (1- linearRadial( radius / starDomain.radiusDomainFunciton(angles))).view(-1,1) 
+    return boundaryConditionSpherical(starDomain, angles, boundaryFunction) *  (1- squaredRadial( radius / starDomain.radiusDomainFunciton(angles))).view(-1,1) 
 
 
 def squaredRadial(x):
@@ -36,8 +36,6 @@ def bfunc(x):
 
 def run():
     geom = dde.geometry.geometry_2d.Rectangle([0.,0.], [1.,1.])
-    eps = 0.02
-    safetyRadius = 0.1
 
     squareAsStarDom = HyperCuboid(2, torch.tensor([0.5,0.5]), torch.tensor([1.,1.]))
     squareAsStarDom.updateDevice("cuda:0")
@@ -55,7 +53,7 @@ def run():
 
 
 
-    n = 33 # use even number for grid. Otherwise you get problems with differentiation, because you will include (0.5,0.5) in your set of points and the boundary extension function is not differentiable there.
+    n = 65 # use even number for grid. Otherwise you get problems with differentiation, because you will include (0.5,0.5) in your set of points and the boundary extension function is not differentiable there.
     # Generate linearly spaced points between 0 and 1
     x = torch.linspace(0+0.001, 1-0.001, n) # added some safety space to border
     y = torch.linspace(0+0.001, 1-0.001, n)
@@ -85,18 +83,18 @@ def run():
     numSolutions = 6
     learningRate = 1e-3 # 1e-3
     # decreaseLearningRateEpoch = learningRate/2
-    alpha = 15. # 2.
+    alpha = 1. # 2.
     beta = 1.
-    delta = 1. # 2.6
+    delta = 100. # 2.6
     deflationCoefficient = 1.
-    epochs= 25000
-    deflationLossPoints = (500.,0.4) 
+    epochs= 40000
+    deflationLossPoints = (1.,0.4) # 500
     
     model = two_dim_DefDifONet(
                     numSolutions = numSolutions,
-                    numBranchFeatures = 7, #6 
+                    numBranchFeatures = 6, #6 
                     trunk_layer = 1,
-                    trunk_width = 2500, #2200
+                    trunk_width = 2000, #2200
                     activationFunction = torch.nn.Tanh(),
                     geom = geom,
                     DirichletHardConstraint = True,

@@ -7,6 +7,7 @@ pathSavePictures = PurePath(plotFolder, "Reduced2DimLDG_FixedBranchFeatures")
 
 
 def plot_Q11_Q12(model, grid_N, showPlot = False, saveName:str = "Reduced2DimLDG_Results" ):
+    
     xs = torch.linspace(0.0, 1.0, grid_N, device="cpu")
     ys = torch.linspace(0.0, 1.0, grid_N, device="cpu")
 
